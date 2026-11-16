@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import hashlib
 import io
 import json
@@ -126,6 +127,62 @@ class HeldOutEvaluationManifestTests(unittest.TestCase):
             sum(item["tokens_scored"] for item in result["datasets"]),
             encoded_target_count,
         )
+
+    def test_untrained_baseline_uses_same_documents_and_token_weighted_groups(self):
+        entries, _ = self.complete_fixture()
+        self.write_manifest(entries)
+        torch.manual_seed(11)
+        model = DevelopmentAIModel(
+            ModelConfig(block_size=8, d_model=16, n_heads=2, n_layers=1, dropout=0.1)
+        )
+        baseline = copy.deepcopy(model)
+
+        result = evaluate_manifest(
+            model,
+            self.manifest_path,
+            device=torch.device("cpu"),
+            baseline_model=baseline,
+            baseline_seed=77,
+        )
+
+        comparison = result["baseline_comparison"]
+        self.assertEqual(comparison["baseline_type"], "randomly_initialized_same_architecture")
+        self.assertEqual(comparison["baseline_seed"], 77)
+        self.assertEqual(len(comparison["datasets"]), 6)
+        self.assertEqual(len(comparison["language_split_metrics"]), 6)
+        for item in comparison["datasets"]:
+            self.assertAlmostEqual(item["loss_improvement"], 0.0, places=7)
+            self.assertEqual(item["tokens_scored"], next(
+                dataset["tokens_scored"]
+                for dataset in result["datasets"]
+                if dataset["dataset_id"] == item["dataset_id"]
+            ))
+        for group in comparison["language_split_metrics"]:
+            self.assertAlmostEqual(group["loss_improvement"], 0.0, places=7)
+
+    def test_baseline_rejects_same_instance_mismatched_config_and_invalid_seed(self):
+        entries, _ = self.complete_fixture()
+        self.write_manifest(entries)
+        config = ModelConfig(block_size=8, d_model=16, n_heads=2, n_layers=1)
+        model = DevelopmentAIModel(config)
+        different_config = DevelopmentAIModel(
+            ModelConfig(block_size=9, d_model=16, n_heads=2, n_layers=1)
+        )
+        with self.assertRaisesRegex(ValueError, "separate model instance"):
+            evaluate_manifest(
+                model, self.manifest_path, device=torch.device("cpu"),
+                baseline_model=model, baseline_seed=1,
+            )
+        with self.assertRaisesRegex(ValueError, "same configuration"):
+            evaluate_manifest(
+                model, self.manifest_path, device=torch.device("cpu"),
+                baseline_model=different_config, baseline_seed=1,
+            )
+        with self.assertRaisesRegex(ValueError, "non-negative integer"):
+            evaluate_manifest(
+                model, self.manifest_path, device=torch.device("cpu"),
+                baseline_model=copy.deepcopy(model), baseline_seed=-1,
+            )
 
     def test_evaluation_is_deterministic_for_same_model_and_corpus(self):
         entries, _ = self.complete_fixture()
@@ -285,6 +342,8 @@ class EvaluationCliTests(unittest.TestCase):
                 "--checkpoint", str(checkpoint_path),
                 "--manifest", str(manifest_path),
                 "--device", "cpu",
+                "--compare-untrained",
+                "--baseline-seed", "7",
             ]
             with patch("sys.argv", argv), contextlib.redirect_stdout(stdout):
                 evaluate_main()
@@ -295,7 +354,23 @@ class EvaluationCliTests(unittest.TestCase):
             self.assertTrue(evaluation["training_corpus_hash_available"])
             self.assertEqual(len(evaluation["datasets"]), 1)
             self.assertEqual(evaluation["datasets"][0]["language"], "english")
+            self.assertEqual(
+                evaluation["baseline_comparison"]["baseline_seed"], 7
+            )
+            self.assertEqual(len(evaluation["baseline_comparison"]["datasets"]), 1)
+            self.assertEqual(
+                len(evaluation["baseline_comparison"]["language_split_metrics"]), 1
+            )
             self.assertNotIn("private local input", stdout.getvalue())
+
+    def test_cli_requires_manifest_for_untrained_comparison(self):
+        with patch("sys.argv", [
+            "core.evaluate",
+            "--compare-untrained",
+        ]):
+            with self.assertRaises(SystemExit) as raised:
+                evaluate_main()
+        self.assertEqual(raised.exception.code, 2)
 
     def test_cli_rejects_manifest_and_legacy_data_together(self):
         with patch("sys.argv", [
