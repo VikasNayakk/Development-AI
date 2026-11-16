@@ -155,15 +155,21 @@ def main():
         parser.error("Provide --data or all three language-specific corpus options.")
 
     try:
+        corpora = {}
+        remaining_bytes = args.max_training_bytes
         if language_mode:
-            corpora = {
-                language: _read_corpus(path, language, args.max_training_bytes)
-                for language, path in supplied_languages.items()
-            }
+            for language, path in supplied_languages.items():
+                item = _read_corpus(path, language, remaining_bytes)
+                corpora[language] = item
+                remaining_bytes -= item["raw_bytes"]
+                if remaining_bytes < 0:
+                    raise ValueError(
+                        f"Combined corpus size exceeds the {args.max_training_bytes}-byte total input limit."
+                    )
         else:
-            corpora = {
-                "custom": _read_corpus(args.data, "custom", args.max_training_bytes)
-            }
+            corpora["custom"] = _read_corpus(
+                args.data, "custom", args.max_training_bytes
+            )
     except ValueError as error:
         parser.error(str(error))
 
@@ -229,7 +235,11 @@ def main():
             )
             training_seconds = time.perf_counter() - started
 
-            artifact_name = f"{training_name}-target-{target_vocab_size}.json"
+            artifact_name = (
+                f"byte-bpe-target-{target_vocab_size}.json"
+                if training_name == "custom"
+                else f"{training_name}-target-{target_vocab_size}.json"
+            )
             artifact_path = output_dir / artifact_name
             tokenizer.save(artifact_path)
             artifact = tokenizer.to_dict()
@@ -257,6 +267,31 @@ def main():
                     for name, result in evaluations.items()
                 )
             )
+
+    if not language_mode:
+        custom = corpora["custom"]
+        report["corpus_file"] = custom["path"]
+        report["corpus_utf8_bytes"] = custom["raw_bytes"]
+        report["corpus_sha256"] = custom["sha256"]
+        report["results"] = [
+            {
+                "target_vocab_size": model["target_vocab_size"],
+                "actual_vocab_size": model["actual_vocab_size"],
+                "merge_count": model["merge_count"],
+                "min_frequency": args.min_frequency,
+                "corpus_utf8_bytes": custom["raw_bytes"],
+                "byte_token_count": model["evaluations"]["custom"]["byte_token_count"],
+                "bpe_token_count": model["evaluations"]["custom"]["bpe_token_count"],
+                "token_reduction_percent": model["evaluations"]["custom"]["token_reduction_percent"],
+                "byte_to_bpe_compression_ratio": model["evaluations"]["custom"]["byte_to_bpe_compression_ratio"],
+                "training_seconds": model["training_seconds"],
+                "encoding_seconds": model["evaluations"]["custom"]["encoding_seconds"],
+                "encoding_tokens_per_second": model["evaluations"]["custom"]["encoding_tokens_per_second"],
+                "artifact": model["artifact"],
+                "artifact_sha256": model["artifact_sha256"],
+            }
+            for model in report["models"]
+        ]
 
     report_path = output_dir / "benchmark-report.json"
     _atomic_write_json(report_path, report)
