@@ -13,7 +13,6 @@ import torch
 
 from .config import ModelConfig
 from .model import DevelopmentAIModel
-from .model_info import count_parameters
 from .train import optimizer_update
 
 
@@ -197,7 +196,7 @@ def main() -> None:
     if args.output:
         destination = Path(args.output)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(serialized + "\\n", encoding="utf-8")
+        destination.write_text(serialized + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
