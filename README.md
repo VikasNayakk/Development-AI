@@ -54,7 +54,7 @@ This reports the active model configuration, unique parameter count, component b
 
 ## Train and evaluate
 ```bash
-python -m core.train --data data/processed/train.txt --steps 1000 --device cpu
+python -m core.train --data data/processed/train.txt --steps 1000 --batch-size 8 --gradient-accumulation-steps 4 --device cpu
 python -m core.evaluate --checkpoint artifacts/latest.pt --data data/processed/train.txt --device cpu
 python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-new-tokens 120 --device cpu
 # Deterministic greedy decoding:
@@ -65,7 +65,7 @@ python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-
 
 Generation validates prompt token IDs and sampling settings. Sampling remains the default; `--greedy` selects deterministic argmax decoding.
 
-Training saves a best-validation inference checkpoint plus a separate resumable checkpoint (including optimizer and RNG state). To continue an interrupted run, increase the total `--steps` target and pass `--resume-from artifacts/latest.resume.pt`. Keep the corpus and training settings unchanged. See [docs/TRAINING_CHECKPOINTS.md](docs/TRAINING_CHECKPOINTS.md) for details.
+Training saves a best-validation inference checkpoint plus a separate resumable checkpoint (including optimizer and RNG state). Use `--batch-size` for the micro-batch and `--gradient-accumulation-steps` to set how many micro-batches form one optimizer update. For example, 8 × 4 = effective batch 32; `--steps` still counts optimizer updates. To continue an interrupted run, increase the total `--steps` target and pass `--resume-from artifacts/latest.resume.pt`. Keep the corpus and training settings unchanged. See [docs/TRAINING_CHECKPOINTS.md](docs/TRAINING_CHECKPOINTS.md) for details.
 
 ## Held-out multilingual evaluation
 Keep validation and test sources separate from training data. Create a local manifest following [docs/EVALUATION_MANIFEST.md](docs/EVALUATION_MANIFEST.md), then run:
