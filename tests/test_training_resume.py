@@ -8,7 +8,13 @@ from unittest.mock import patch
 
 import torch
 
-from core.train import _training_settings_match, _validate_elapsed_seconds, main as train_main
+from core.train import (
+    RESUME_CHECKPOINT_TYPE,
+    _training_settings_match,
+    _validate_elapsed_seconds,
+    main as train_main,
+    validate_resume_checkpoint,
+)
 
 
 class TrainingResumeTests(unittest.TestCase):
@@ -19,6 +25,49 @@ class TrainingResumeTests(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
                     _validate_elapsed_seconds(value)
+
+    def test_legacy_resume_checkpoint_without_telemetry_starts_a_new_measurement_window(self):
+        config = ModelConfig(block_size=8)
+        settings = {
+            "seed": 42,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 1,
+            "effective_batch_size": 2,
+            "learning_rate": 0.001,
+            "block_size": 8,
+            "validation_fraction": 0.1,
+            "eval_interval": 10,
+            "eval_iters": 2,
+            "device_type": "cpu",
+            "cuda_device_count": 0,
+        }
+        checkpoint = {
+            "format_version": 1,
+            "checkpoint_type": RESUME_CHECKPOINT_TYPE,
+            "model_name": "Development-AI",
+            "config": config.to_dict(),
+            "tokenizer": "utf8-byte-v1",
+            "training": {
+                "steps_completed": 2,
+                "best_validation_loss": 5.0,
+                "corpus_sha256": "fixture-hash",
+                "corpus_bytes": 100,
+                "settings": settings,
+            },
+            "model_state": {},
+            "optimizer_state": {},
+            "history": [],
+            "rng_state": {},
+        }
+        validated = validate_resume_checkpoint(
+            checkpoint,
+            config=config,
+            settings=settings,
+            corpus_sha256="fixture-hash",
+        )
+        self.assertEqual(validated.get("optimizer_compute_seconds", 0.0), 0.0)
+        self.assertEqual(validated.get("optimizer_compute_tokens_processed", 0), 0)
+        self.assertEqual(validated.get("timed_optimizer_updates", 0), 0)
 
     def test_training_cli_rejects_zero_gradient_accumulation(self):
         with patch("sys.argv", [
@@ -123,7 +172,7 @@ class TrainingResumeTests(unittest.TestCase):
             telemetry_fields = {
                 "optimizer_update_seconds",
                 "optimizer_compute_seconds",
-                "training_tokens_per_second",
+                "optimizer_compute_tokens_per_second",
                 "optimizer_updates_per_second",
             }
             deterministic_resumed_history = [
@@ -145,11 +194,16 @@ class TrainingResumeTests(unittest.TestCase):
             }
             self.assertEqual(resumed_training, full_training)
             self.assertGreater(resumed["training"]["optimizer_compute_seconds"], 0.0)
+            self.assertEqual(resumed["training"]["optimizer_compute_tokens_processed"], 4 * 2 * 2 * 8)
+            self.assertEqual(resumed["training"]["timed_optimizer_updates"], 4)
             for record in resumed["history"]:
                 self.assertGreater(record["optimizer_update_seconds"], 0.0)
                 self.assertGreater(record["optimizer_compute_seconds"], 0.0)
-                self.assertGreater(record["training_tokens_per_second"], 0.0)
+                self.assertGreater(record["optimizer_compute_tokens_per_second"], 0.0)
                 self.assertGreater(record["optimizer_updates_per_second"], 0.0)
+                self.assertEqual(record["optimizer_compute_tokens_processed"],
+                                 record["step"] * 2 * 2 * 8)
+                self.assertEqual(record["timed_optimizer_updates"], record["step"])
                 self.assertEqual(
                     record["training_tokens_processed"],
                     record["step"] * 2 * 2 * 8,
