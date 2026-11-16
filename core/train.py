@@ -44,6 +44,30 @@ def _validate_non_negative_integer(value, label: str) -> int:
     return value
 
 
+def _validate_non_negative_finite_float(value, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"Invalid {label}; expected a finite non-negative number.")
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        finite = False
+    if not finite or value < 0:
+        raise ValueError(f"Invalid {label}; expected a finite non-negative number.")
+    return float(value)
+
+
+def _validate_early_stopping_settings(settings: dict) -> tuple[int, float]:
+    patience = settings.get("early_stopping_patience")
+    if type(patience) is not int or patience < 0:
+        raise ValueError("Training settings have an invalid early-stopping patience.")
+    min_delta = _validate_non_negative_finite_float(
+        settings.get("early_stopping_min_delta"), "early-stopping min_delta"
+    )
+    if patience == 0 and min_delta != 0.0:
+        raise ValueError("early-stopping min_delta requires a positive patience.")
+    return patience, min_delta
+
+
 def _validate_telemetry_counters(
     *,
     optimizer_compute_seconds,
@@ -183,6 +207,8 @@ def _training_settings_match(saved_settings: dict, expected_settings: dict) -> b
     # Before gradient accumulation existed, every optimizer update used one batch.
     normalized.setdefault("gradient_accumulation_steps", 1)
     normalized.setdefault("effective_batch_size", normalized.get("batch_size"))
+    normalized.setdefault("early_stopping_patience", 0)
+    normalized.setdefault("early_stopping_min_delta", 0.0)
     return normalized == expected_settings
 
 
@@ -273,6 +299,8 @@ def build_resume_checkpoint(
     optimizer_compute_seconds: float = 0.0,
     optimizer_compute_tokens_processed: int = 0,
     timed_optimizer_updates: int = 0,
+    early_stopping_best_loss: float | None = None,
+    early_stopping_bad_evaluations: int = 0,
 ) -> dict:
     if type(steps_completed) is not int or steps_completed < 1:
         raise ValueError("steps_completed must be a positive integer.")
@@ -283,6 +311,15 @@ def build_resume_checkpoint(
     effective_batch_size = settings.get("effective_batch_size")
     if type(effective_batch_size) is not int or effective_batch_size <= 0:
         raise ValueError("Training settings have an invalid effective batch size.")
+    _validate_early_stopping_settings(settings)
+    if early_stopping_best_loss is None:
+        early_stopping_best_loss = best_validation_loss
+    early_stopping_best_loss = _validate_non_negative_finite_float(
+        early_stopping_best_loss, "early-stopping best validation loss"
+    )
+    early_stopping_bad_evaluations = _validate_non_negative_integer(
+        early_stopping_bad_evaluations, "early-stopping bad-evaluation count"
+    )
     (
         optimizer_compute_seconds,
         optimizer_compute_tokens_processed,
@@ -310,6 +347,8 @@ def build_resume_checkpoint(
             "optimizer_compute_seconds": optimizer_compute_seconds,
             "optimizer_compute_tokens_processed": optimizer_compute_tokens_processed,
             "timed_optimizer_updates": timed_optimizer_updates,
+            "early_stopping_best_loss": early_stopping_best_loss,
+            "early_stopping_bad_evaluations": early_stopping_bad_evaluations,
             "settings": dict(settings),
         },
         "history": [dict(record) for record in history],
@@ -356,6 +395,15 @@ def validate_resume_checkpoint(
         raise ValueError("Resume checkpoint has an invalid completed-step count.")
     if not isinstance(best_loss, (int, float)) or isinstance(best_loss, bool) or not math.isfinite(best_loss):
         raise ValueError("Resume checkpoint has an invalid best validation loss.")
+    _validate_early_stopping_settings(settings)
+    _validate_non_negative_finite_float(
+        training.get("early_stopping_best_loss", best_loss),
+        "early-stopping best validation loss",
+    )
+    _validate_non_negative_integer(
+        training.get("early_stopping_bad_evaluations", 0),
+        "early-stopping bad-evaluation count",
+    )
     _validate_telemetry_counters(
         optimizer_compute_seconds=training.get("optimizer_compute_seconds", 0.0),
         optimizer_compute_tokens_processed=training.get(
@@ -427,6 +475,10 @@ def main():
     parser.add_argument("--block-size", type=int, default=128)
     parser.add_argument("--eval-interval", type=int, default=100)
     parser.add_argument("--eval-iters", type=int, default=20)
+    parser.add_argument("--early-stopping-patience", type=int, default=0,
+                        help="Stop after this many consecutive validation checks without a min_delta improvement; 0 disables it.")
+    parser.add_argument("--early-stopping-min-delta", type=float, default=0.0,
+                        help="Minimum absolute validation-loss decrease that resets early-stopping patience.")
     parser.add_argument("--validation-fraction", type=float, default=0.1)
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     parser.add_argument("--seed", type=int, default=42)
@@ -446,8 +498,18 @@ def main():
     ):
         if getattr(args, name) <= 0:
             parser.error(f"--{name.replace('_', '-')} must be positive")
-    if args.learning_rate <= 0:
-        parser.error("--learning-rate must be positive")
+    if args.learning_rate <= 0 or not math.isfinite(args.learning_rate):
+        parser.error("--learning-rate must be finite and positive")
+    if args.early_stopping_patience < 0:
+        parser.error("--early-stopping-patience cannot be negative")
+    try:
+        early_stopping_min_delta = _validate_non_negative_finite_float(
+            args.early_stopping_min_delta, "early-stopping min_delta"
+        )
+    except ValueError as error:
+        parser.error(str(error))
+    if args.early_stopping_patience == 0 and early_stopping_min_delta != 0.0:
+        parser.error("--early-stopping-min-delta requires --early-stopping-patience greater than zero")
     if not 0.0 < args.validation_fraction < 0.5:
         parser.error("--validation-fraction must be between 0 and 0.5")
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -514,6 +576,8 @@ def main():
         "validation_fraction": args.validation_fraction,
         "eval_interval": args.eval_interval,
         "eval_iters": args.eval_iters,
+        "early_stopping_patience": args.early_stopping_patience,
+        "early_stopping_min_delta": early_stopping_min_delta,
         "device_type": device.type,
         "cuda_device_count": torch.cuda.device_count() if device.type == "cuda" else 0,
     }
@@ -531,6 +595,8 @@ def main():
     optimizer_compute_seconds = 0.0
     optimizer_compute_tokens_processed = 0
     timed_optimizer_updates = 0
+    early_stopping_best_loss = float("inf")
+    early_stopping_bad_evaluations = 0
     start_step = 1
 
     if resume_from_path is not None:
@@ -587,6 +653,23 @@ def main():
                 resume_training.get("timed_optimizer_updates", 0),
                 "timed optimizer update count",
             )
+            early_stopping_best_loss = _validate_non_negative_finite_float(
+                resume_training.get("early_stopping_best_loss", saved_best_loss),
+                "early-stopping best validation loss",
+            )
+            early_stopping_bad_evaluations = _validate_non_negative_integer(
+                resume_training.get("early_stopping_bad_evaluations", 0),
+                "early-stopping bad-evaluation count",
+            )
+            if (
+                args.early_stopping_patience > 0
+                and early_stopping_bad_evaluations >= args.early_stopping_patience
+            ):
+                print(
+                    "Continuing a previously early-stopped run; "
+                    "resetting the consecutive non-improvement counter."
+                )
+                early_stopping_bad_evaluations = 0
             start_step = completed_steps + 1
             print(f"Resuming from step {completed_steps}; target is {args.steps} steps.")
         except (OSError, RuntimeError, ValueError, TypeError, KeyError) as error:
@@ -629,6 +712,18 @@ def main():
                 batch_size=args.batch_size, block_size=config.block_size,
                 eval_iters=args.eval_iters, device=device
             )
+            validation_loss = metrics["validation"]
+            if validation_loss < early_stopping_best_loss - early_stopping_min_delta:
+                early_stopping_best_loss = validation_loss
+                early_stopping_bad_evaluations = 0
+            elif args.early_stopping_patience > 0:
+                early_stopping_bad_evaluations += 1
+            else:
+                early_stopping_best_loss = min(early_stopping_best_loss, validation_loss)
+            early_stopping_triggered = (
+                args.early_stopping_patience > 0
+                and early_stopping_bad_evaluations >= args.early_stopping_patience
+            )
             record = {
                 "step": step,
                 **metrics,
@@ -645,6 +740,11 @@ def main():
                 "timed_optimizer_updates": timed_optimizer_updates,
                 "optimizer_compute_tokens_per_second": optimizer_compute_tokens_per_second,
                 "optimizer_updates_per_second": optimizer_updates_per_second,
+                "early_stopping_best_validation_loss": early_stopping_best_loss,
+                "early_stopping_bad_evaluations": early_stopping_bad_evaluations,
+                "early_stopping_patience": args.early_stopping_patience,
+                "early_stopping_min_delta": early_stopping_min_delta,
+                "early_stopping_triggered": early_stopping_triggered,
             }
             history.append(record)
             print(
@@ -657,8 +757,16 @@ def main():
                 f"= effective_batch {args.batch_size * args.gradient_accumulation_steps} | "
                 f"update_seconds {update_seconds:.4f} | "
                 f"measured_tokens_per_second {optimizer_compute_tokens_per_second:.2f} | "
-                f"learning_rate {learning_rate:.6g}"
+                f"learning_rate {learning_rate:.6g} | "
+                f"early_stop_bad_checks {early_stopping_bad_evaluations}/"
+                f"{args.early_stopping_patience if args.early_stopping_patience else 'disabled'}"
             )
+            if early_stopping_triggered:
+                print(
+                    f"Early stopping triggered at step {step}: validation loss "
+                    f"did not improve by at least {early_stopping_min_delta} "
+                    f"for {args.early_stopping_patience} consecutive evaluation checks."
+                )
             if metrics["validation"] < best_validation_loss:
                 best_validation_loss = metrics["validation"]
                 payload = {
@@ -677,11 +785,17 @@ def main():
                         "optimizer_compute_seconds": optimizer_compute_seconds,
                         "optimizer_compute_tokens_processed": optimizer_compute_tokens_processed,
                         "timed_optimizer_updates": timed_optimizer_updates,
+                        "early_stopping_best_loss": early_stopping_best_loss,
+                        "early_stopping_bad_evaluations": early_stopping_bad_evaluations,
                     },
                 }
                 atomic_save_checkpoint(payload, output_path)
 
-        if step % args.resume_interval == 0 or step == args.steps:
+        if (
+            step % args.resume_interval == 0
+            or step == args.steps
+            or early_stopping_triggered
+        ):
             resume_payload = build_resume_checkpoint(
                 model,
                 optimizer,
@@ -696,8 +810,13 @@ def main():
                 optimizer_compute_seconds=optimizer_compute_seconds,
                 optimizer_compute_tokens_processed=optimizer_compute_tokens_processed,
                 timed_optimizer_updates=timed_optimizer_updates,
+                early_stopping_best_loss=early_stopping_best_loss,
+                early_stopping_bad_evaluations=early_stopping_bad_evaluations,
             )
             atomic_save_checkpoint(resume_payload, resume_output_path)
+
+        if early_stopping_triggered:
+            break
 
     history_path = output_path.with_suffix(".metrics.json")
     history_path.parent.mkdir(parents=True, exist_ok=True)
@@ -709,6 +828,14 @@ def main():
     print(f"Optimizer-compute tokens measured: {optimizer_compute_tokens_processed:,}")
     print(f"Optimizer compute seconds: {optimizer_compute_seconds:.4f}")
     print(f"Measured optimizer tokens/second: {optimizer_compute_tokens_per_second:.2f}")
+    print(
+        "Training stop reason: "
+        + (
+            "validation-based early stopping"
+            if history and history[-1].get("early_stopping_triggered")
+            else "maximum optimizer-step target reached"
+        )
+    )
 
 
 if __name__ == "__main__":
