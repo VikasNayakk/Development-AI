@@ -8,10 +8,18 @@ from unittest.mock import patch
 
 import torch
 
-from core.train import _training_settings_match, main as train_main
+from core.train import _training_settings_match, _validate_elapsed_seconds, main as train_main
 
 
 class TrainingResumeTests(unittest.TestCase):
+    def test_optimizer_compute_seconds_requires_finite_non_negative_number(self):
+        self.assertEqual(_validate_elapsed_seconds(1), 1.0)
+        self.assertEqual(_validate_elapsed_seconds(0.25), 0.25)
+        for value in (True, -0.1, float("nan"), float("inf"), "1.0"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    _validate_elapsed_seconds(value)
+
     def test_training_cli_rejects_zero_gradient_accumulation(self):
         with patch("sys.argv", [
             "core.train",
