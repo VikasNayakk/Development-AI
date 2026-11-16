@@ -24,14 +24,15 @@ function sendJson(response, status, payload, extraHeaders = {}) {
   response.end(JSON.stringify(payload));
 }
 
+function originAllowed(request) {
+  const origin = request.headers.origin;
+  return !origin || allowedOrigins.includes(origin);
+}
+
 function corsHeaders(request) {
   const origin = request.headers.origin;
-  if (!origin) return {};
-  if (allowedOrigins.includes(origin)) {
-    return {
-      "Access-Control-Allow-Origin": origin,
-      "Vary": "Origin"
-    };
+  if (origin && allowedOrigins.includes(origin)) {
+    return { "Access-Control-Allow-Origin": origin, "Vary": "Origin" };
   }
   return {};
 }
@@ -80,9 +81,7 @@ function validateMessages(value) {
   return null;
 }
 
-async function handleChat(request, response) {
-  const headers = corsHeaders(request);
-
+async function handleChat(request, response, headers) {
   if (!AI_BASE_URL || !AI_API_KEY || !AI_MODEL) {
     sendJson(response, 503, {
       error: {
@@ -166,6 +165,16 @@ async function handleChat(request, response) {
 const server = http.createServer(async (request, response) => {
   const headers = corsHeaders(request);
 
+  if (!originAllowed(request)) {
+    sendJson(response, 403, {
+      error: {
+        code: "ORIGIN_NOT_ALLOWED",
+        message: "This request origin is not allowed. Add the exact extension origin to ALLOWED_EXTENSION_ORIGINS."
+      }
+    });
+    return;
+  }
+
   if (request.method === "OPTIONS") {
     response.writeHead(204, {
       ...headers,
@@ -189,7 +198,7 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/v1/chat") {
-    await handleChat(request, response);
+    await handleChat(request, response, headers);
     return;
   }
 
