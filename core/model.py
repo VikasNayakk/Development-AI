@@ -1,4 +1,6 @@
 """Small decoder-only causal Transformer initialized from random weights."""
+import math
+
 import torch
 from torch import nn
 
@@ -57,8 +59,13 @@ class DevelopmentAIModel(nn.Module):
                 nn.init.zeros_(module.bias)
 
     def forward(self, token_ids: torch.Tensor, targets: torch.Tensor | None = None):
-        if token_ids.ndim != 2 or token_ids.size(1) == 0:
-            raise ValueError("token_ids must have shape [batch, non-empty sequence].")
+        if (
+            not isinstance(token_ids, torch.Tensor)
+            or token_ids.ndim != 2
+            or token_ids.size(0) == 0
+            or token_ids.size(1) == 0
+        ):
+            raise ValueError("token_ids must have shape [non-empty batch, non-empty sequence].")
         if token_ids.dtype != torch.long:
             raise TypeError("token_ids must use torch.long dtype.")
         _, length = token_ids.shape
@@ -71,7 +78,11 @@ class DevelopmentAIModel(nn.Module):
         logits = self.language_head(self.final_norm(x))
         loss = None
         if targets is not None:
-            if targets.shape != token_ids.shape or targets.dtype != torch.long:
+            if (
+                not isinstance(targets, torch.Tensor)
+                or targets.shape != token_ids.shape
+                or targets.dtype != torch.long
+            ):
                 raise ValueError("targets must be torch.long and match token_ids shape.")
             loss = nn.functional.cross_entropy(
                 logits.reshape(-1, self.config.vocab_size), targets.reshape(-1)
@@ -79,23 +90,56 @@ class DevelopmentAIModel(nn.Module):
         return logits, loss
 
     @torch.no_grad()
-    def generate(self, token_ids: torch.Tensor, max_new_tokens: int, temperature: float = 1.0):
-        if token_ids.ndim != 2 or token_ids.size(1) == 0:
-            raise ValueError("generation prompt must be a non-empty 2D tensor.")
+    def generate(
+        self,
+        token_ids: torch.Tensor,
+        max_new_tokens: int,
+        temperature: float = 1.0,
+        *,
+        do_sample: bool = True,
+    ):
+        """Append tokens with sampling by default or deterministic greedy decoding."""
+        if not isinstance(token_ids, torch.Tensor):
+            raise TypeError("generation prompt must be a torch.Tensor.")
+        if (
+            token_ids.ndim != 2
+            or token_ids.size(0) == 0
+            or token_ids.size(1) == 0
+        ):
+            raise ValueError("generation prompt must have shape [non-empty batch, non-empty sequence].")
+        if token_ids.dtype != torch.long:
+            raise TypeError("generation prompt must use torch.long dtype.")
+        if token_ids.device != self.token_embedding.weight.device:
+            raise ValueError("generation prompt and model must be on the same device.")
+        if bool(((token_ids.min() < 0) | (token_ids.max() >= self.config.vocab_size)).item()):
+            raise ValueError(
+                f"generation token IDs must be in [0, {self.config.vocab_size - 1}]."
+            )
+        if type(max_new_tokens) is not int:
+            raise TypeError("max_new_tokens must be an integer.")
         if max_new_tokens < 0:
             raise ValueError("max_new_tokens cannot be negative.")
-        if temperature <= 0:
-            raise ValueError("temperature must be greater than zero.")
+        if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
+            raise TypeError("temperature must be a finite number.")
+        if not math.isfinite(temperature) or temperature <= 0:
+            raise ValueError("temperature must be finite and greater than zero.")
+        if not isinstance(do_sample, bool):
+            raise TypeError("do_sample must be a boolean.")
+
         was_training = self.training
         self.eval()
         try:
             for _ in range(max_new_tokens):
+                # Long prompts are accepted; only the most recent context window is used.
                 context = token_ids[:, -self.config.block_size :]
                 logits, _ = self(context)
                 next_logits = logits[:, -1, :] / temperature
-                next_token = torch.multinomial(
-                    torch.softmax(next_logits, dim=-1), num_samples=1
-                )
+                if do_sample:
+                    next_token = torch.multinomial(
+                        torch.softmax(next_logits, dim=-1), num_samples=1
+                    )
+                else:
+                    next_token = next_logits.argmax(dim=-1, keepdim=True)
                 token_ids = torch.cat((token_ids, next_token), dim=1)
             return token_ids
         finally:
