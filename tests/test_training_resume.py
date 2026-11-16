@@ -70,6 +70,26 @@ class TrainingResumeTests(unittest.TestCase):
         self.assertEqual(validated.get("optimizer_compute_tokens_processed", 0), 0)
         self.assertEqual(validated.get("timed_optimizer_updates", 0), 0)
 
+        for field, bad_value in (
+            ("optimizer_compute_seconds", float("nan")),
+            ("optimizer_compute_seconds", -1.0),
+            ("optimizer_compute_tokens_processed", -1),
+            ("optimizer_compute_tokens_processed", True),
+            ("timed_optimizer_updates", -1),
+        ):
+            with self.subTest(field=field, bad_value=bad_value):
+                invalid_checkpoint = dict(checkpoint)
+                invalid_training = dict(checkpoint["training"])
+                invalid_training[field] = bad_value
+                invalid_checkpoint["training"] = invalid_training
+                with self.assertRaises(ValueError):
+                    validate_resume_checkpoint(
+                        invalid_checkpoint,
+                        config=config,
+                        settings=settings,
+                        corpus_sha256="fixture-hash",
+                    )
+
     def test_training_cli_rejects_zero_gradient_accumulation(self):
         with patch("sys.argv", [
             "core.train",
