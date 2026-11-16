@@ -1,27 +1,19 @@
 # Own-model development plan
 
 ## Independence definition
-The architecture, training code, model weights and inference implementation are maintained by this project. We do not load pretrained weights, call hosted AI APIs, or require Ollama/another model runtime. PyTorch is currently a numerical/training dependency; replacing it with a custom optimized CPU runtime is a later engineering milestone.
+The architecture, training code, model weights and inference implementation are maintained by this project. We do not load pretrained weights, call hosted AI APIs, or require another model runtime. PyTorch is currently a numerical/training dependency; replacing it with a project-owned optimized CPU runtime is a later engineering milestone.
 
 ## Milestones
-1. **From-scratch baseline:** byte tokenizer, decoder-only Transformer, random initialization, local training and CPU generation.
-2. **Training quality (current):** sequential held-out validation split, train/validation loss estimation, best-validation checkpoint, metrics JSON, checkpoint format version and unit tests.
-3. **Data engineering:** dataset provenance, rights/licensing, deduplication, quality filters, privacy controls and language balance.
-4. **Model engineering:** tokenizer experiments, context scaling, parameter sizing, profiling and CPU memory optimization.
-5. **Independent inference runtime:** optimized CPU kernels, streaming, stable API, model format and integrity checks.
-6. **Assistant capabilities:** instruction tuning, structured output, memory retrieval, planning, tool schemas and decision benchmarks.
-7. **Release readiness:** reproducible benchmarks, safety evaluation, model card, licensing review and signed releases.
+1. From-scratch byte-level decoder-only Transformer and CPU generation.
+2. Reproducible training, held-out evaluation, best-checkpoint saving and automated quality checks.
+3. **Data engineering:** source rights manifest, path validation, provenance hashes, Unicode normalization, conservative privacy screening, exact deduplication, quality filters and script statistics.
+4. Tokenizer and model engineering, profiling and CPU memory optimization.
+5. Project-owned inference runtime and stable local API.
+6. Instruction tuning on owned/licensed data, memory, planning, decisions and tool adapters.
+7. Safety, reliability, benchmarks and release engineering.
 
-## Evaluation rules
-- Keep training and validation segments disjoint.
-- Compare checkpoints on a fixed, documented held-out corpus.
-- Track both training and validation loss; a widening gap can indicate overfitting.
-- Treat byte-token perplexity as a tokenizer-specific metric, not a direct measure of reasoning or helpfulness.
-- Never claim model quality from training loss alone.
-- Record seed, model configuration, data size, training steps and evaluation results.
-
-## Current limitations
-This model is randomly initialized and intentionally small. It is not a pretrained assistant and will initially generate low-quality text. A capable general-purpose model requires large, carefully governed datasets, substantial compute, and extensive evaluation. CPU is practical for small experiments and appropriately sized inference, not economical for training a frontier-scale model.
+## Evaluation and limitations
+Keep train/validation data disjoint. Record seed, model configuration, data size, steps and metrics. Byte-token perplexity is tokenizer-specific and is not a direct measure of reasoning. This randomly initialized small model is not a pretrained assistant. Frontier-level capability requires extensive data, compute and evaluation; CPU is suitable for small experiments, not economical frontier-scale training.
 
 ## Data governance
-Use only data with appropriate rights. Exclude secrets, credentials and sensitive personal records. Keep data and checkpoints out of Git by default.
+Use data with appropriate rights. Exclude secrets, credentials and sensitive personal records. Keep datasets and checkpoints out of Git. Heuristic privacy checks are not complete PII protection; manual review is required.

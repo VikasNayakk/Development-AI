@@ -2,22 +2,21 @@
 
 An independent, local-first AI research project. The long-term objective is to own the model architecture, training pipeline, trained weights, inference runtime, memory and tool-decision layers.
 
-## Independence requirements
-- No required hosted AI API.
-- No required pretrained model or external model runtime.
+## Independence
+- No required hosted AI API, pretrained model, or external model runtime.
 - Model weights are initialized randomly and learned by this repository's training code.
-- CPU is the supported baseline for small experiments and local inference.
-- Compatible applications will connect to a local API in a later milestone.
+- CPU is the baseline for small experiments and local inference.
+- PyTorch is currently numerical/training infrastructure, not a source of pretrained intelligence. A project-owned optimized CPU inference runtime is a later milestone.
 
-Standard numerical libraries are permitted as implementation infrastructure. They do not supply pretrained intelligence or model weights.
+## Current capabilities
+- Byte-level decoder-only Transformer, local training and CPU/CUDA generation.
+- Disjoint train/validation evaluation and best-validation checkpointing.
+- Local dataset preparation with explicit rights manifest, provenance hashes, conservative privacy filtering, normalization and exact deduplication.
 
-## Current milestone
-A byte-level decoder-only Transformer, random initialization, local-corpus training, disjoint validation, best-validation checkpointing, metrics export, and CPU/CUDA text generation.
-
-This is a small research model, not a useful general-purpose assistant yet. Early output will likely be incoherent. Capability requires substantial high-quality data, compute, evaluation, and iteration.
+This is a small research model, not a capable general-purpose assistant. Initial output will be poor. Capability requires substantial high-quality data, compute and evaluation.
 
 ## Setup
-Python 3.10+ is recommended. Install PyTorch for your platform, then:
+Python 3.10+ is recommended:
 ```bash
 python -m venv .venv
 # Windows: .venv\\Scripts\\activate
@@ -25,37 +24,38 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Train from scratch
-Place an owned/licensed UTF-8 text corpus at `data/train.txt`. Keep private datasets out of Git.
-```bash
-python -m core.train --data data/train.txt --steps 1000 --device cpu
+## Prepare data
+Create `data/sources.json`:
+```json
+{
+  "sources": [
+    {
+      "source_id": "my-original-notes",
+      "path": "raw/notes.txt",
+      "license": "CC0-1.0",
+      "rights_confirmed": true
+    }
+  ]
+}
 ```
-The script splits the corpus sequentially into training and held-out validation portions, reports both losses, and saves the best validation checkpoint to `artifacts/latest.pt`. Metrics are written to `artifacts/latest.metrics.json`.
-
-## Evaluate a checkpoint
+Place your UTF-8 text at `data/raw/notes.txt`, then run:
 ```bash
-python -m core.evaluate --checkpoint artifacts/latest.pt --data data/train.txt --device cpu
+python -m core.prepare_data --manifest data/sources.json --output-dir data/processed
 ```
-The reported perplexity is byte-token perplexity and should only be compared using the same tokenizer and evaluation corpus.
+Review `data/processed/dataset_report.json` before training. Privacy checks are heuristic and cannot guarantee detection of all sensitive information. Exact duplicate detection does not detect near-duplicates.
 
-## Generate
+## Train and evaluate
 ```bash
+python -m core.train --data data/processed/train.txt --steps 1000 --device cpu
+python -m core.evaluate --checkpoint artifacts/latest.pt --data data/processed/train.txt --device cpu
 python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-new-tokens 120 --device cpu
 ```
 
 ## Quality checks
 ```bash
-python -m unittest discover -s tests -v
 python -m compileall -q core tests
+python -m unittest discover -s tests -v
 ```
 
-## Roadmap
-1. From-scratch model and training/evaluation baseline (current).
-2. Reproducible experiments, dataset manifests, and benchmark suite.
-3. Tokenizer and data engineering improvements.
-4. CPU inference optimization and stable local API.
-5. Instruction tuning on owned/licensed data, memory, planning, decisions, and tool adapters.
-6. Safety, reliability, documentation, and release engineering.
-
-## Data and security
-Use only data you have rights to use. Do not train on credentials, secrets, or sensitive personal data. Checkpoints and datasets are ignored by Git. Do not expose a future local API to a network without authentication, authorization, rate limits, and audit logs.
+## Data governance
+Only use data with appropriate rights. Keep private datasets and checkpoints out of Git. Review all source material manually before training.
