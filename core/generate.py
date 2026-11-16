@@ -27,8 +27,8 @@ def main():
         parser.error("--max-new-tokens cannot be negative")
     if not math.isfinite(args.temperature) or args.temperature <= 0:
         parser.error("--temperature must be finite and greater than zero")
-    if args.seed is not None and args.seed < 0:
-        parser.error("--seed must be non-negative")
+    if args.seed is not None and not 0 <= args.seed <= (2**64 - 1):
+        parser.error("--seed must be between 0 and 2**64 - 1")
     if args.device == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA requested but unavailable")
 
