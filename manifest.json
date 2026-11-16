@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Development AI",
+  "version": "0.1.0",
+  "description": "A foundation for an AI-assisted browser workflow extension.",
+  "action": {
+    "default_title": "Development AI",
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "permissions": ["storage"]
+}
