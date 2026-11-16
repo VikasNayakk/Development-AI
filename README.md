@@ -67,6 +67,15 @@ Generation validates prompt token IDs and sampling settings. Sampling remains th
 
 Training saves a best-validation inference checkpoint plus a separate resumable checkpoint (including optimizer and RNG state). To continue an interrupted run, increase the total `--steps` target and pass `--resume-from artifacts/latest.resume.pt`. Keep the corpus and training settings unchanged. See [docs/TRAINING_CHECKPOINTS.md](docs/TRAINING_CHECKPOINTS.md) for details.
 
+## Held-out multilingual evaluation
+Keep validation and test sources separate from training data. Create a local manifest following [docs/EVALUATION_MANIFEST.md](docs/EVALUATION_MANIFEST.md), then run:
+
+```bash
+python -m core.evaluate --checkpoint artifacts/latest.pt --manifest data/evaluation/manifest.json --device cpu
+```
+
+The report gives separate Hindi, English and Hinglish metrics for validation and test. Raw evaluation text and manifest files stay local and must not be committed.
+
 ## Quality checks
 ```bash
 python -m compileall -q core tests
