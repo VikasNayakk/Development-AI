@@ -70,7 +70,9 @@ Include all six language/split combinations for a complete report. Partial manif
 python -m core.evaluate \
   --checkpoint artifacts/latest.pt \
   --manifest data/evaluation/manifest.json \
-  --device cpu
+  --device cpu \
+  --compare-untrained \
+  --baseline-seed 42
 ```
 
 The existing single-file command remains available:
@@ -83,6 +85,23 @@ python -m core.evaluate \
 ```
 
 Use either `--manifest` or `--data`, not both.
+
+## Random-initialization baseline comparison
+
+To compare a checkpoint with one reproducible random initialization of the exact same architecture and configuration, add:
+
+```bash
+python -m core.evaluate \
+  --checkpoint artifacts/latest.pt \
+  --manifest data/evaluation/manifest.json \
+  --device cpu \
+  --compare-untrained \
+  --baseline-seed 42
+```
+
+The command creates a fresh randomly initialized model, scores the same documents with both models, and reports per-dataset plus token-weighted per-language/split loss and perplexity improvements. Positive loss improvement means the trained checkpoint has lower byte loss than that seeded random initialization. The baseline model is not saved, and creation restores the process RNG states.
+
+This is one seeded initialization, not an average across random seeds. It measures next-byte prediction only and does not establish answer quality. Use validation metrics for model and training decisions; keep the test split untouched until final reporting. The legacy `--data` evaluation mode does not support this comparison.
 
 ## Metrics and protocol
 
