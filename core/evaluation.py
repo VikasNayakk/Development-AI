@@ -96,11 +96,16 @@ def load_evaluation_manifest(
     if not isinstance(entries, list) or not entries:
         raise EvaluationManifestError("Evaluation manifest must contain a non-empty datasets array.")
 
+    if training_corpus_sha256 is not None and (
+        not isinstance(training_corpus_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", training_corpus_sha256) is None
+    ):
+        raise EvaluationManifestError("Checkpoint contains an invalid training corpus SHA-256.")
+
     root = manifest_path.parent
     seen_ids: set[str] = set()
     seen_documents: set[str] = set()
     loaded: list[EvaluationDataset] = []
-    seen_language_splits: set[tuple[str, str]] = set()
 
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict) or set(entry) != _REQUIRED_DATASET_KEYS:
@@ -120,11 +125,11 @@ def load_evaluation_manifest(
 
         language = entry.get("language")
         split = entry.get("split")
-        if language not in SUPPORTED_LANGUAGES:
+        if not isinstance(language, str) or language not in SUPPORTED_LANGUAGES:
             raise EvaluationManifestError(
                 f"Dataset {dataset_id} language must be one of: {', '.join(sorted(SUPPORTED_LANGUAGES))}."
             )
-        if split not in SUPPORTED_SPLITS:
+        if not isinstance(split, str) or split not in SUPPORTED_SPLITS:
             raise EvaluationManifestError(
                 f"Dataset {dataset_id} split must be 'validation' or 'test'; training data is not allowed."
             )
@@ -136,18 +141,23 @@ def load_evaluation_manifest(
         source_path = _safe_evaluation_path(root, entry.get("path"))
         raw = source_path.read_bytes()
         file_sha256 = hashlib.sha256(raw).hexdigest()
-        if training_corpus_sha256 and file_sha256 == training_corpus_sha256:
-            raise EvaluationManifestError(
-                f"Dataset {dataset_id} exactly matches the training corpus; held-out data is required."
-            )
         try:
             text = raw.decode("utf-8", errors="strict")
         except UnicodeDecodeError as error:
             raise EvaluationManifestError(
                 f"Dataset {dataset_id} is not valid UTF-8."
             ) from error
+        # core.train hashes the UTF-8 text after universal newline translation.
+        canonical_text = text.replace("\\r\\n", "\\n").replace("\\r", "\\n")
+        training_comparison_sha256 = hashlib.sha256(
+            canonical_text.encode("utf-8")
+        ).hexdigest()
+        if training_corpus_sha256 and training_comparison_sha256 == training_corpus_sha256:
+            raise EvaluationManifestError(
+                f"Dataset {dataset_id} exactly matches the training corpus; held-out data is required."
+            )
 
-        documents = _split_documents(text)
+        documents = _split_documents(canonical_text)
         if not documents:
             raise EvaluationManifestError(f"Dataset {dataset_id} contains no documents.")
 
@@ -184,7 +194,6 @@ def load_evaluation_manifest(
             file_bytes=len(raw),
             documents=tuple(token_documents),
         ))
-        seen_language_splits.add((language, split))
 
     if not loaded:
         raise EvaluationManifestError("Evaluation manifest contains no usable datasets.")
