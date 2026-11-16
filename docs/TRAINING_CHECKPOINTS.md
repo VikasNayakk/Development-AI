@@ -5,7 +5,7 @@
 A training run writes three separate local files:
 
 - The `--output` file (default `artifacts/latest.pt`) is the best-validation inference checkpoint. It remains format version 1 and can still be loaded by `core.generate` and `core.evaluate`.
-- The resume file (by default `artifacts/latest.resume.pt`) is the latest resumable training state. It contains model weights, AdamW optimizer state, completed step, best validation loss, metric history, corpus fingerprint, training settings, and Python/CPU/CUDA random-number-generator states.
+- The resume file (by default `artifacts/latest.resume.pt`) is the latest resumable training state. It contains model weights, AdamW optimizer state, completed step, best validation loss, metric history, corpus fingerprint, training settings, cumulative optimizer-compute time, and Python/CPU/CUDA random-number-generator states.
 - The metrics file (for example `artifacts/latest.metrics.json`) contains the metric history.
 
 Resume checkpoints use a separate type marker and format version. They are not inference checkpoints and must not be passed to `core.generate`.
