@@ -150,11 +150,8 @@ def prepare_dataset(manifest_path: Path, output_dir: Path, *, min_chars: int = 8
             "script_character_counts": script_counts(text),
         })
 
-    if not accepted:
-        raise DatasetError("No documents passed validation; no training corpus was written.")
-
     output_dir.mkdir(parents=True, exist_ok=True)
-    corpus = "\n\n".join(output_parts) + "\n"
+    corpus = ("\n\n".join(output_parts) + "\n") if output_parts else ""
     report = {
         "format_version": 1,
         "manifest_file": manifest_path.name,
@@ -168,7 +165,8 @@ def prepare_dataset(manifest_path: Path, output_dir: Path, *, min_chars: int = 8
         "corpus_sha256": hashlib.sha256(corpus.encode("utf-8")).hexdigest(),
         "corpus_characters": len(corpus),
     }
-    (output_dir / "train.txt").write_text(corpus, encoding="utf-8", newline="\n")
+    if accepted:
+        (output_dir / "train.txt").write_text(corpus, encoding="utf-8", newline="\n")
     (output_dir / "dataset_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
