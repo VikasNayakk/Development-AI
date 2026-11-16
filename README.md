@@ -45,6 +45,13 @@ python -m core.prepare_data --manifest data/sources.json --output-dir data/proce
 ```
 Review `data/processed/dataset_report.json` before training. Privacy checks are heuristic and cannot guarantee detection of all sensitive information. Exact duplicate detection does not detect near-duplicates.
 
+## Inspect the model
+```bash
+python -m core.model_info --json
+```
+
+This reports the active model configuration, unique parameter count, component breakdown, tied-weight accounting and parameter-storage estimates. It reports the randomly initialized architecture; it does not load or measure a trained checkpoint.
+
 ## Train and evaluate
 ```bash
 python -m core.train --data data/processed/train.txt --steps 1000 --device cpu

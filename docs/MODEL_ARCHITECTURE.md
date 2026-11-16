@@ -31,6 +31,14 @@ Current default configuration:
 
 With the current default dimensions and tied token/output embeddings, the model has approximately 842,496 trainable parameters. This is a small experimental language model, not a production assistant.
 
+Run the parameter/configuration report at any time:
+
+```bash
+python -m core.model_info --json
+```
+
+The report instantiates the current architecture, counts unique parameters (so the tied output embedding is counted once), and gives a component breakdown plus FP32/FP16-or-BF16 parameter-storage estimates. Those estimates cover parameter tensors only; they do not include gradients, optimizer state, activations or runtime workspaces. The report describes the randomly initialized architecture and does not claim that a trained checkpoint is capable.
+
 The experimental `utf8-byte-bpe-v1` tokenizer is deliberately not wired into model training. The production vocabulary size and checkpoint format remain unchanged until the multilingual benchmark and a versioned migration are reviewed.
 
 ## Design principles
@@ -80,8 +88,9 @@ Tokenizer compression is a storage/sequence-length metric, not a language-unders
 Before a meaningful long run:
 - Add explicit train/validation/test manifest support with leakage checks.
 - Add gradient accumulation and optional mixed precision only with numerical tests.
-- Add periodic checkpoints, resume-from-checkpoint and optimizer/scheduler state.
-- Save best validation checkpoint separately from latest resumable checkpoint.
+- Completed: resumable checkpoints preserve model, AdamW optimizer, Python/CPU/CUDA RNG state, completed step and best-validation metadata.
+- Completed: best-validation inference checkpoint is kept separate from the latest resumable training checkpoint.
+- Still pending: scheduler state when a learning-rate scheduler is introduced; no scheduler is currently used.
 - Track tokens processed, steps, wall-clock time, learning rate, gradient norm and per-language validation loss.
 - Add early stopping or a documented fixed-budget policy.
 - Make data-loader and sampling behavior deterministic where practical.
@@ -125,10 +134,12 @@ Passing unit tests proves software behavior, not answer quality.
 
 ## Immediate next engineering tasks
 
-1. Add a reproducible model-parameter and configuration report.
-2. Add deterministic sampling controls and stronger generation input validation.
-3. Add resumable checkpoints with optimizer and RNG state, without changing the existing checkpoint reader.
-4. Add a held-out evaluation manifest and per-language metrics.
-5. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
+1. Add deterministic sampling controls and stronger generation input validation.
+2. Add a held-out evaluation manifest and per-language metrics.
+3. Add gradient accumulation and validate its effective-batch behavior.
+4. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
+5. Record training throughput, tokens processed and generation latency on documented hardware.
+
+Completed foundation items include the reproducible model-parameter/configuration report and resumable training checkpoints with optimizer and RNG state.
 
 Each task should be implemented on a feature branch, covered by tests, and reviewed through a pull request. Do not merge an unverified tokenizer migration or commit private prompt data.
