@@ -58,3 +58,33 @@ SHA-256 detects accidental corruption; it is not a digital signature and does no
 5. Compare token reduction and tokenizer throughput across corpora; record corpus hashes and settings.
 6. Define checkpoint metadata, tokenizer artifact distribution, vocabulary-size model changes and old-checkpoint compatibility before changing the production pipeline.
 7. Only then consider a separately reviewed migration PR.
+
+
+## Multilingual prompt benchmark
+
+The benchmark CLI supports three independent prompt corpora and a shared combined tokenizer:
+
+- Hindi prompts: `--data-hindi`
+- English prompts: `--data-english`
+- Hinglish prompts (Hindi written in Roman script, often mixed with English technical terms): `--data-hinglish`
+
+Provide all three options together. Each UTF-8 text file uses a blank line between prompts. Each prompt becomes a separate training document, preventing BPE merges from crossing prompt boundaries. Do not place credentials, private account data, or other sensitive material in benchmark files.
+
+The benchmark trains four tokenizer variants for every requested vocabulary size: one on each language separately, and one on all three languages combined. Every trained tokenizer is evaluated against all three language corpora and the combined evaluation set. The report records per-language token reduction, compression ratio, encoding throughput and exact round-trip status, along with corpus byte counts and SHA-256 hashes.
+
+Example:
+
+~~~bash
+python -m core.benchmark_tokenizer \
+  --data-hindi data/prompts/hindi.txt \
+  --data-english data/prompts/english.txt \
+  --data-hinglish data/prompts/hinglish.txt \
+  --output-dir artifacts/tokenizer-benchmarks \
+  --vocab-sizes 2048 4096 8192
+~~~
+
+The 50,000-byte default limit applies to the total size of all three files combined. Raise it only after reviewing available memory; the current trainer stores token and pair-index structures in memory.
+
+For privacy, do not commit real conversation prompts or user-specific corpora to the repository. Keep these input files local and share them only through an explicitly chosen private channel. The repository contains tests with synthetic sample strings, not the user's chat history.
+
+The legacy single-file `--data` option remains available for compatibility.
