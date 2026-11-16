@@ -61,6 +61,80 @@ def estimate_loss(model, train_data, validation_data, *, batch_size, block_size,
     return results
 
 
+def optimizer_update(
+    model,
+    optimizer,
+    train_data: torch.Tensor,
+    *,
+    batch_size: int,
+    block_size: int,
+    gradient_accumulation_steps: int,
+    device: torch.device,
+    max_grad_norm: float = 1.0,
+) -> dict:
+    """Perform one optimizer update using equally sized micro-batches.
+
+    gradient_accumulation_steps controls the number of forward/backward
+    micro-batches per optimizer update. Loss is averaged over micro-batches,
+    gradients are clipped once after accumulation, and the optimizer steps once.
+    """
+    if type(batch_size) is not int or batch_size <= 0:
+        raise ValueError("batch_size must be a positive integer.")
+    if type(block_size) is not int or block_size <= 0:
+        raise ValueError("block_size must be a positive integer.")
+    if type(gradient_accumulation_steps) is not int or gradient_accumulation_steps <= 0:
+        raise ValueError("gradient_accumulation_steps must be a positive integer.")
+    if (
+        isinstance(max_grad_norm, bool)
+        or not isinstance(max_grad_norm, (int, float))
+        or not math.isfinite(max_grad_norm)
+        or max_grad_norm <= 0
+    ):
+        raise ValueError("max_grad_norm must be finite and greater than zero.")
+
+    optimizer.zero_grad(set_to_none=True)
+    loss_total = 0.0
+    try:
+        for _ in range(gradient_accumulation_steps):
+            inputs, targets = get_batch(train_data, batch_size, block_size, device)
+            _, loss = model(inputs, targets)
+            if loss is None or loss.ndim != 0:
+                raise ValueError("Training model must return a scalar loss.")
+            if not bool(torch.isfinite(loss.detach()).item()):
+                raise FloatingPointError("Non-finite loss; optimizer update was cancelled.")
+            (loss / gradient_accumulation_steps).backward()
+            loss_total += float(loss.detach().item())
+
+        # Clip once using the full accumulated gradient, not once per micro-batch.
+        grad_norm = torch.nn.utils.clip_grad_norm_(
+            model.parameters(),
+            max_norm=float(max_grad_norm),
+            error_if_nonfinite=True,
+        )
+        optimizer.step()
+    except Exception:
+        optimizer.zero_grad(set_to_none=True)
+        raise
+
+    return {
+        "loss": loss_total / gradient_accumulation_steps,
+        "gradient_norm": float(grad_norm.detach().item()),
+        "micro_batches": gradient_accumulation_steps,
+        "effective_batch_size": batch_size * gradient_accumulation_steps,
+    }
+
+
+def _training_settings_match(saved_settings: dict, expected_settings: dict) -> bool:
+    """Compare settings while allowing pre-accumulation checkpoints to resume at 1x."""
+    if not isinstance(saved_settings, dict):
+        return False
+    normalized = dict(saved_settings)
+    # Before gradient accumulation existed, every optimizer update used one batch.
+    normalized.setdefault("gradient_accumulation_steps", 1)
+    normalized.setdefault("effective_batch_size", normalized.get("batch_size"))
+    return normalized == expected_settings
+
+
 def atomic_save_checkpoint(payload: dict, destination: Path) -> None:
     """Write a checkpoint atomically so interruption cannot leave a partial file."""
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -197,11 +271,11 @@ def validate_resume_checkpoint(
         raise ValueError("Resume checkpoint is missing training metadata.")
     if training.get("corpus_sha256") != corpus_sha256:
         raise ValueError("Training corpus changed; refusing an unsafe resume.")
-    if training.get("settings") != settings:
+    if not _training_settings_match(training.get("settings"), settings):
         raise ValueError(
             "Training settings differ from the saved run. Keep seed, batch size, "
-            "learning rate, block size, validation fraction, evaluation settings "
-            "and device configuration unchanged when resuming."
+            "learning rate, block size, gradient accumulation, validation fraction, "
+            "evaluation settings and device configuration unchanged when resuming."
         )
     step = training.get("steps_completed")
     best_loss = training.get("best_validation_loss")
@@ -259,7 +333,14 @@ def main():
         "--steps", type=int, default=1000,
         help="Total target step count, including steps already completed in a resumed run.",
     )
-    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument(
+        "--batch-size", type=int, default=16,
+        help="Micro-batch size per forward/backward pass.",
+    )
+    parser.add_argument(
+        "--gradient-accumulation-steps", type=int, default=1,
+        help="Micro-batches per optimizer update; --steps still counts optimizer updates.",
+    )
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument("--block-size", type=int, default=128)
     parser.add_argument("--eval-interval", type=int, default=100)
@@ -278,7 +359,8 @@ def main():
     args = parser.parse_args()
 
     for name in (
-        "steps", "batch_size", "block_size", "eval_interval", "eval_iters", "resume_interval"
+        "steps", "batch_size", "gradient_accumulation_steps", "block_size",
+        "eval_interval", "eval_iters", "resume_interval"
     ):
         if getattr(args, name) <= 0:
             parser.error(f"--{name.replace('_', '-')} must be positive")
@@ -343,6 +425,8 @@ def main():
     settings = {
         "seed": args.seed,
         "batch_size": args.batch_size,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "effective_batch_size": args.batch_size * args.gradient_accumulation_steps,
         "learning_rate": args.learning_rate,
         "block_size": args.block_size,
         "validation_fraction": args.validation_fraction,
@@ -414,12 +498,16 @@ def main():
 
     for step in range(start_step, args.steps + 1):
         model.train()
-        x, y = get_batch(train_data, args.batch_size, config.block_size, device)
-        _, loss = model(x, y)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        update_metrics = optimizer_update(
+            model,
+            optimizer,
+            train_data,
+            batch_size=args.batch_size,
+            block_size=config.block_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            device=device,
+            max_grad_norm=1.0,
+        )
 
         if step == 1 or step % args.eval_interval == 0 or step == args.steps:
             metrics = estimate_loss(
@@ -427,12 +515,20 @@ def main():
                 batch_size=args.batch_size, block_size=config.block_size,
                 eval_iters=args.eval_iters, device=device
             )
-            record = {"step": step, **metrics}
+            record = {
+                "step": step,
+                **metrics,
+                "micro_batch_size": args.batch_size,
+                "gradient_accumulation_steps": args.gradient_accumulation_steps,
+                "effective_batch_size": args.batch_size * args.gradient_accumulation_steps,
+            }
             history.append(record)
             print(
                 f"step {step}/{args.steps} | "
                 f"train_loss {metrics['train']:.4f} | "
-                f"validation_loss {metrics['validation']:.4f}"
+                f"validation_loss {metrics['validation']:.4f} | "
+                f"micro_batch {args.batch_size} x {args.gradient_accumulation_steps} "
+                f"= effective_batch {args.batch_size * args.gradient_accumulation_steps}"
             )
             if metrics["validation"] < best_validation_loss:
                 best_validation_loss = metrics["validation"]
