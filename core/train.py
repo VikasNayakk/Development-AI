@@ -445,6 +445,7 @@ def main():
                     "training": {
                         "steps_completed": step,
                         **settings,
+                        "settings": dict(settings),
                         "best_validation_loss": best_validation_loss,
                         "corpus_bytes": len(data),
                         "corpus_sha256": corpus_sha256,
