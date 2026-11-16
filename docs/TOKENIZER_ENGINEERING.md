@@ -28,7 +28,7 @@ The trainer and encoder use linked-node arrays and a priority queue to avoid res
 
 ## Train and benchmark
 
-Use a reviewed, rights-cleared UTF-8 text corpus. The CLI defaults to target vocabulary sizes 2,048, 4,096 and 8,192 and has a conservative 250,000-byte input limit.
+Use a reviewed, rights-cleared UTF-8 text corpus. The CLI defaults to target vocabulary sizes 2,048, 4,096 and 8,192 and has a conservative 50,000-byte input limit.
 
 ~~~bash
 python -m core.benchmark_tokenizer \
