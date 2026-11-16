@@ -98,8 +98,8 @@ def optimizer_update(
         for _ in range(gradient_accumulation_steps):
             inputs, targets = get_batch(train_data, batch_size, block_size, device)
             _, loss = model(inputs, targets)
-            if loss is None or loss.ndim != 0:
-                raise ValueError("Training model must return a scalar loss.")
+            if not isinstance(loss, torch.Tensor) or loss.ndim != 0:
+                raise ValueError("Training model must return a scalar tensor loss.")
             if not bool(torch.isfinite(loss.detach()).item()):
                 raise FloatingPointError("Non-finite loss; optimizer update was cancelled.")
             (loss / gradient_accumulation_steps).backward()
