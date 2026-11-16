@@ -43,6 +43,27 @@ def _load_inference_model(checkpoint_path: Path, device: torch.device):
     return checkpoint, model
 
 
+def _create_untrained_baseline(config: ModelConfig, seed: int, device: torch.device):
+    """Create a reproducible random baseline without perturbing caller RNG streams."""
+    if type(seed) is not int or seed < 0:
+        raise ValueError("baseline seed must be a non-negative integer.")
+    cpu_rng_state = torch.get_rng_state()
+    cuda_rng_states = (
+        torch.cuda.get_rng_state_all() if device.type == "cuda" else None
+    )
+    try:
+        torch.manual_seed(seed)
+        if device.type == "cuda":
+            torch.cuda.manual_seed_all(seed)
+        baseline = DevelopmentAIModel(config).to(device)
+    finally:
+        torch.set_rng_state(cpu_rng_state)
+        if cuda_rng_states is not None:
+            torch.cuda.set_rng_state_all(cuda_rng_states)
+    baseline.eval()
+    return baseline
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", default="artifacts/latest.pt")
@@ -58,8 +79,21 @@ def main():
     parser.add_argument("--eval-iters", type=int, default=50)
     parser.add_argument("--validation-fraction", type=float, default=0.1)
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument(
+        "--compare-untrained",
+        action="store_true",
+        help="Compare held-out manifest metrics against a same-config random initialization.",
+    )
+    parser.add_argument(
+        "--baseline-seed", type=int, default=42,
+        help="Non-negative seed for the untrained comparison model (default: 42).",
+    )
     args = parser.parse_args()
 
+    if args.compare_untrained and not args.manifest:
+        parser.error("--compare-untrained requires --manifest; legacy --data mode is not supported.")
+    if args.compare_untrained and args.baseline_seed < 0:
+        parser.error("--baseline-seed must be non-negative")
     if args.manifest and args.data is not None:
         parser.error("Use either --manifest or --data, not both.")
     if args.device == "cuda" and not torch.cuda.is_available():
@@ -80,11 +114,17 @@ def main():
             else None
         )
         try:
+            baseline_model = (
+                _create_untrained_baseline(model.config, args.baseline_seed, device)
+                if args.compare_untrained else None
+            )
             metrics = evaluate_manifest(
                 model,
                 Path(args.manifest),
                 device=device,
                 training_corpus_sha256=training_hash,
+                baseline_model=baseline_model,
+                baseline_seed=args.baseline_seed if args.compare_untrained else None,
             )
         except (EvaluationManifestError, OSError, RuntimeError, ValueError) as error:
             parser.error(f"Cannot evaluate held-out manifest: {error}")
