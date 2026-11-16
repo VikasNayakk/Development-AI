@@ -6,6 +6,7 @@ import math
 import os
 import random
 import tempfile
+import time
 from pathlib import Path
 
 import torch
@@ -17,6 +18,53 @@ from .tokenizer import ByteTokenizer
 
 RESUME_FORMAT_VERSION = 1
 RESUME_CHECKPOINT_TYPE = "development-ai-training-resume"
+
+
+def _synchronize_device(device: torch.device) -> None:
+    """Wait for queued CUDA work before measuring optimizer update duration."""
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+
+
+def _validate_elapsed_seconds(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("Resume checkpoint has invalid optimizer compute time.")
+    try:
+        is_finite = math.isfinite(value)
+    except OverflowError:
+        is_finite = False
+    if not is_finite or value < 0:
+        raise ValueError("Resume checkpoint has invalid optimizer compute time.")
+    return float(value)
+
+
+def _validate_non_negative_integer(value, label: str) -> int:
+    if type(value) is not int or value < 0:
+        raise ValueError(f"Resume checkpoint has invalid {label}.")
+    return value
+
+
+def _validate_telemetry_counters(
+    *,
+    optimizer_compute_seconds,
+    optimizer_compute_tokens_processed,
+    timed_optimizer_updates,
+    effective_batch_size: int,
+    block_size: int,
+) -> tuple[float, int, int]:
+    seconds = _validate_elapsed_seconds(optimizer_compute_seconds)
+    tokens = _validate_non_negative_integer(
+        optimizer_compute_tokens_processed, "optimizer compute token count"
+    )
+    updates = _validate_non_negative_integer(
+        timed_optimizer_updates, "timed optimizer update count"
+    )
+    expected_tokens = updates * effective_batch_size * block_size
+    if tokens != expected_tokens:
+        raise ValueError("Resume checkpoint optimizer telemetry counters do not match.")
+    if (updates == 0 and seconds != 0.0) or (updates > 0 and seconds <= 0.0):
+        raise ValueError("Resume checkpoint optimizer timing and update counters do not match.")
+    return seconds, tokens, updates
 
 
 def split_corpus(data: torch.Tensor, validation_fraction: float, block_size: int):
@@ -222,11 +270,30 @@ def build_resume_checkpoint(
     best_validation_loss: float,
     history: list,
     device: torch.device,
+    optimizer_compute_seconds: float = 0.0,
+    optimizer_compute_tokens_processed: int = 0,
+    timed_optimizer_updates: int = 0,
 ) -> dict:
     if type(steps_completed) is not int or steps_completed < 1:
         raise ValueError("steps_completed must be a positive integer.")
     if not math.isfinite(best_validation_loss):
         raise ValueError("best_validation_loss must be finite before saving a resume checkpoint.")
+    if not isinstance(settings, dict):
+        raise ValueError("Training settings must be a dictionary.")
+    effective_batch_size = settings.get("effective_batch_size")
+    if type(effective_batch_size) is not int or effective_batch_size <= 0:
+        raise ValueError("Training settings have an invalid effective batch size.")
+    (
+        optimizer_compute_seconds,
+        optimizer_compute_tokens_processed,
+        timed_optimizer_updates,
+    ) = _validate_telemetry_counters(
+        optimizer_compute_seconds=optimizer_compute_seconds,
+        optimizer_compute_tokens_processed=optimizer_compute_tokens_processed,
+        timed_optimizer_updates=timed_optimizer_updates,
+        effective_batch_size=effective_batch_size,
+        block_size=config.block_size,
+    )
     return {
         "format_version": RESUME_FORMAT_VERSION,
         "checkpoint_type": RESUME_CHECKPOINT_TYPE,
@@ -240,6 +307,9 @@ def build_resume_checkpoint(
             "best_validation_loss": float(best_validation_loss),
             "corpus_sha256": corpus_sha256,
             "corpus_bytes": corpus_bytes,
+            "optimizer_compute_seconds": optimizer_compute_seconds,
+            "optimizer_compute_tokens_processed": optimizer_compute_tokens_processed,
+            "timed_optimizer_updates": timed_optimizer_updates,
             "settings": dict(settings),
         },
         "history": [dict(record) for record in history],
@@ -284,8 +354,17 @@ def validate_resume_checkpoint(
     best_loss = training.get("best_validation_loss")
     if type(step) is not int or step < 1:
         raise ValueError("Resume checkpoint has an invalid completed-step count.")
-    if not isinstance(best_loss, (int, float)) or not math.isfinite(best_loss):
+    if not isinstance(best_loss, (int, float)) or isinstance(best_loss, bool) or not math.isfinite(best_loss):
         raise ValueError("Resume checkpoint has an invalid best validation loss.")
+    _validate_telemetry_counters(
+        optimizer_compute_seconds=training.get("optimizer_compute_seconds", 0.0),
+        optimizer_compute_tokens_processed=training.get(
+            "optimizer_compute_tokens_processed", 0
+        ),
+        timed_optimizer_updates=training.get("timed_optimizer_updates", 0),
+        effective_batch_size=settings["effective_batch_size"],
+        block_size=config.block_size,
+    )
     if not isinstance(checkpoint.get("model_state"), dict):
         raise ValueError("Resume checkpoint is missing model weights.")
     if not isinstance(checkpoint.get("optimizer_state"), dict):
@@ -449,6 +528,9 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     best_validation_loss = float("inf")
     history = []
+    optimizer_compute_seconds = 0.0
+    optimizer_compute_tokens_processed = 0
+    timed_optimizer_updates = 0
     start_step = 1
 
     if resume_from_path is not None:
@@ -494,6 +576,17 @@ def main():
             restore_rng_state(resume_checkpoint["rng_state"], device)
             best_validation_loss = min(saved_best_loss, best_file_loss)
             history = [dict(record) for record in resume_checkpoint["history"]]
+            optimizer_compute_seconds = _validate_elapsed_seconds(
+                resume_training.get("optimizer_compute_seconds", 0.0)
+            )
+            optimizer_compute_tokens_processed = _validate_non_negative_integer(
+                resume_training.get("optimizer_compute_tokens_processed", 0),
+                "optimizer compute token count",
+            )
+            timed_optimizer_updates = _validate_non_negative_integer(
+                resume_training.get("timed_optimizer_updates", 0),
+                "timed optimizer update count",
+            )
             start_step = completed_steps + 1
             print(f"Resuming from step {completed_steps}; target is {args.steps} steps.")
         except (OSError, RuntimeError, ValueError, TypeError, KeyError) as error:
@@ -501,6 +594,8 @@ def main():
 
     for step in range(start_step, args.steps + 1):
         model.train()
+        _synchronize_device(device)
+        update_started = time.perf_counter()
         update_metrics = optimizer_update(
             model,
             optimizer,
@@ -511,6 +606,22 @@ def main():
             device=device,
             max_grad_norm=1.0,
         )
+        _synchronize_device(device)
+        update_seconds = time.perf_counter() - update_started
+        if not math.isfinite(update_seconds) or update_seconds <= 0.0:
+            raise RuntimeError("Optimizer update timing was not positive and finite.")
+        optimizer_compute_seconds += update_seconds
+        timed_optimizer_updates += 1
+        update_token_count = (
+            args.batch_size * args.gradient_accumulation_steps * config.block_size
+        )
+        tokens_processed = step * update_token_count
+        optimizer_compute_tokens_processed += update_token_count
+        optimizer_compute_tokens_per_second = (
+            optimizer_compute_tokens_processed / optimizer_compute_seconds
+        )
+        optimizer_updates_per_second = timed_optimizer_updates / optimizer_compute_seconds
+        learning_rate = float(optimizer.param_groups[0]["lr"])
 
         if step == 1 or step % args.eval_interval == 0 or step == args.steps:
             metrics = estimate_loss(
@@ -526,6 +637,14 @@ def main():
                 "micro_batch_size": args.batch_size,
                 "gradient_accumulation_steps": args.gradient_accumulation_steps,
                 "effective_batch_size": args.batch_size * args.gradient_accumulation_steps,
+                "learning_rate": learning_rate,
+                "training_tokens_processed": tokens_processed,
+                "optimizer_update_seconds": update_seconds,
+                "optimizer_compute_seconds": optimizer_compute_seconds,
+                "optimizer_compute_tokens_processed": optimizer_compute_tokens_processed,
+                "timed_optimizer_updates": timed_optimizer_updates,
+                "optimizer_compute_tokens_per_second": optimizer_compute_tokens_per_second,
+                "optimizer_updates_per_second": optimizer_updates_per_second,
             }
             history.append(record)
             print(
@@ -535,7 +654,10 @@ def main():
                 f"micro_batch_loss {update_metrics['loss']:.4f} | "
                 f"gradient_norm {update_metrics['gradient_norm']:.4f} | "
                 f"micro_batch {args.batch_size} x {args.gradient_accumulation_steps} "
-                f"= effective_batch {args.batch_size * args.gradient_accumulation_steps}"
+                f"= effective_batch {args.batch_size * args.gradient_accumulation_steps} | "
+                f"update_seconds {update_seconds:.4f} | "
+                f"measured_tokens_per_second {optimizer_compute_tokens_per_second:.2f} | "
+                f"learning_rate {learning_rate:.6g}"
             )
             if metrics["validation"] < best_validation_loss:
                 best_validation_loss = metrics["validation"]
@@ -552,6 +674,9 @@ def main():
                         "best_validation_loss": best_validation_loss,
                         "corpus_bytes": len(data),
                         "corpus_sha256": corpus_sha256,
+                        "optimizer_compute_seconds": optimizer_compute_seconds,
+                        "optimizer_compute_tokens_processed": optimizer_compute_tokens_processed,
+                        "timed_optimizer_updates": timed_optimizer_updates,
                     },
                 }
                 atomic_save_checkpoint(payload, output_path)
@@ -568,6 +693,9 @@ def main():
                 best_validation_loss=best_validation_loss,
                 history=history,
                 device=device,
+                optimizer_compute_seconds=optimizer_compute_seconds,
+                optimizer_compute_tokens_processed=optimizer_compute_tokens_processed,
+                timed_optimizer_updates=timed_optimizer_updates,
             )
             atomic_save_checkpoint(resume_payload, resume_output_path)
 
@@ -577,6 +705,10 @@ def main():
     print(f"Best checkpoint saved to: {output_path}")
     print(f"Resume checkpoint saved to: {resume_output_path}")
     print(f"Metrics saved to: {history_path}")
+    print(f"Training tokens processed (all steps): {tokens_processed:,}")
+    print(f"Optimizer-compute tokens measured: {optimizer_compute_tokens_processed:,}")
+    print(f"Optimizer compute seconds: {optimizer_compute_seconds:.4f}")
+    print(f"Measured optimizer tokens/second: {optimizer_compute_tokens_per_second:.2f}")
 
 
 if __name__ == "__main__":

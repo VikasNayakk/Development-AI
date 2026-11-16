@@ -8,10 +8,116 @@ from unittest.mock import patch
 
 import torch
 
-from core.train import _training_settings_match, main as train_main
+from core.config import ModelConfig
+from core.train import (
+    RESUME_CHECKPOINT_TYPE,
+    _training_settings_match,
+    _validate_elapsed_seconds,
+    main as train_main,
+    validate_resume_checkpoint,
+)
 
 
 class TrainingResumeTests(unittest.TestCase):
+    def test_optimizer_compute_seconds_requires_finite_non_negative_number(self):
+        self.assertEqual(_validate_elapsed_seconds(1), 1.0)
+        self.assertEqual(_validate_elapsed_seconds(0.25), 0.25)
+        for value in (True, -0.1, float("nan"), float("inf"), "1.0"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    _validate_elapsed_seconds(value)
+
+    def test_legacy_resume_checkpoint_without_telemetry_starts_a_new_measurement_window(self):
+        config = ModelConfig(block_size=8)
+        settings = {
+            "seed": 42,
+            "batch_size": 2,
+            "gradient_accumulation_steps": 1,
+            "effective_batch_size": 2,
+            "learning_rate": 0.001,
+            "block_size": 8,
+            "validation_fraction": 0.1,
+            "eval_interval": 10,
+            "eval_iters": 2,
+            "device_type": "cpu",
+            "cuda_device_count": 0,
+        }
+        checkpoint = {
+            "format_version": 1,
+            "checkpoint_type": RESUME_CHECKPOINT_TYPE,
+            "model_name": "Development-AI",
+            "config": config.to_dict(),
+            "tokenizer": "utf8-byte-v1",
+            "training": {
+                "steps_completed": 2,
+                "best_validation_loss": 5.0,
+                "corpus_sha256": "fixture-hash",
+                "corpus_bytes": 100,
+                "settings": settings,
+            },
+            "model_state": {},
+            "optimizer_state": {},
+            "history": [],
+            "rng_state": {},
+        }
+        validated = validate_resume_checkpoint(
+            checkpoint,
+            config=config,
+            settings=settings,
+            corpus_sha256="fixture-hash",
+        )
+        self.assertEqual(validated.get("optimizer_compute_seconds", 0.0), 0.0)
+        self.assertEqual(validated.get("optimizer_compute_tokens_processed", 0), 0)
+        self.assertEqual(validated.get("timed_optimizer_updates", 0), 0)
+
+        for field, bad_value in (
+            ("optimizer_compute_seconds", float("nan")),
+            ("optimizer_compute_seconds", -1.0),
+            ("optimizer_compute_tokens_processed", -1),
+            ("optimizer_compute_tokens_processed", True),
+            ("timed_optimizer_updates", -1),
+        ):
+            with self.subTest(field=field, bad_value=bad_value):
+                invalid_checkpoint = dict(checkpoint)
+                invalid_training = dict(checkpoint["training"])
+                invalid_training[field] = bad_value
+                invalid_checkpoint["training"] = invalid_training
+                with self.assertRaises(ValueError):
+                    validate_resume_checkpoint(
+                        invalid_checkpoint,
+                        config=config,
+                        settings=settings,
+                        corpus_sha256="fixture-hash",
+                    )
+
+        inconsistent_counters = (
+            {"optimizer_compute_seconds": 1.0},
+            {"optimizer_compute_tokens_processed": 16},
+            {
+                "optimizer_compute_seconds": 1.0,
+                "optimizer_compute_tokens_processed": 15,
+                "timed_optimizer_updates": 1,
+            },
+            {
+                "optimizer_compute_seconds": 0.0,
+                "optimizer_compute_tokens_processed": 16,
+                "timed_optimizer_updates": 1,
+            },
+        )
+        for overrides in inconsistent_counters:
+            with self.subTest(overrides=overrides):
+                invalid_checkpoint = dict(checkpoint)
+                invalid_training = dict(checkpoint["training"])
+                invalid_training.update(overrides)
+                invalid_checkpoint["training"] = invalid_training
+                with self.assertRaises(ValueError):
+                    validate_resume_checkpoint(
+                        invalid_checkpoint,
+                        config=config,
+                        settings=settings,
+                        corpus_sha256="fixture-hash",
+                    )
+
     def test_training_cli_rejects_zero_gradient_accumulation(self):
         with patch("sys.argv", [
             "core.train",
@@ -112,8 +218,46 @@ class TrainingResumeTests(unittest.TestCase):
                 [entry["step"] for entry in resumed["history"]],
                 [1, 2, 4],
             )
-            self.assertEqual(resumed["history"], uninterrupted["history"])
-            self.assertEqual(resumed["training"], uninterrupted["training"])
+            telemetry_fields = {
+                "optimizer_update_seconds",
+                "optimizer_compute_seconds",
+                "optimizer_compute_tokens_per_second",
+                "optimizer_updates_per_second",
+            }
+            deterministic_resumed_history = [
+                {key: value for key, value in record.items() if key not in telemetry_fields}
+                for record in resumed["history"]
+            ]
+            deterministic_full_history = [
+                {key: value for key, value in record.items() if key not in telemetry_fields}
+                for record in uninterrupted["history"]
+            ]
+            self.assertEqual(deterministic_resumed_history, deterministic_full_history)
+            resumed_training = {
+                key: value for key, value in resumed["training"].items()
+                if key != "optimizer_compute_seconds"
+            }
+            full_training = {
+                key: value for key, value in uninterrupted["training"].items()
+                if key != "optimizer_compute_seconds"
+            }
+            self.assertEqual(resumed_training, full_training)
+            self.assertGreater(resumed["training"]["optimizer_compute_seconds"], 0.0)
+            self.assertEqual(resumed["training"]["optimizer_compute_tokens_processed"], 4 * 2 * 2 * 8)
+            self.assertEqual(resumed["training"]["timed_optimizer_updates"], 4)
+            for record in resumed["history"]:
+                self.assertGreater(record["optimizer_update_seconds"], 0.0)
+                self.assertGreater(record["optimizer_compute_seconds"], 0.0)
+                self.assertGreater(record["optimizer_compute_tokens_per_second"], 0.0)
+                self.assertGreater(record["optimizer_updates_per_second"], 0.0)
+                self.assertEqual(record["optimizer_compute_tokens_processed"],
+                                 record["step"] * 2 * 2 * 8)
+                self.assertEqual(record["timed_optimizer_updates"], record["step"])
+                self.assertEqual(
+                    record["training_tokens_processed"],
+                    record["step"] * 2 * 2 * 8,
+                )
+                self.assertEqual(record["learning_rate"], 0.001)
 
             for name, tensor in uninterrupted["model_state"].items():
                 self.assertTrue(

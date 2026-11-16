@@ -5,7 +5,7 @@
 A training run writes three separate local files:
 
 - The `--output` file (default `artifacts/latest.pt`) is the best-validation inference checkpoint. It remains format version 1 and can still be loaded by `core.generate` and `core.evaluate`.
-- The resume file (by default `artifacts/latest.resume.pt`) is the latest resumable training state. It contains model weights, AdamW optimizer state, completed step, best validation loss, metric history, corpus fingerprint, training settings, and Python/CPU/CUDA random-number-generator states.
+- The resume file (by default `artifacts/latest.resume.pt`) is the latest resumable training state. It contains model weights, AdamW optimizer state, completed step, best validation loss, metric history, corpus fingerprint, training settings, cumulative optimizer-compute time, and Python/CPU/CUDA random-number-generator states.
 - The metrics file (for example `artifacts/latest.metrics.json`) contains the metric history.
 
 Resume checkpoints use a separate type marker and format version. They are not inference checkpoints and must not be passed to `core.generate`.
@@ -35,6 +35,21 @@ A resumable checkpoint is saved every 100 steps by default and at the final step
 - For a reliable comparison, keep optimizer-update count, effective batch size, learning rate, data, model and other settings fixed.
 
 The default accumulation value of 1 preserves the previous single-batch update behavior. Earlier resumable checkpoints that predate the accumulation setting can resume only with accumulation 1. New resume checkpoints store the accumulation count and effective batch size; changing these when resuming is rejected.
+
+## Training telemetry
+
+At evaluation intervals, the metrics JSON and training log also record:
+
+- `training_tokens_processed`: total supervised target-byte positions across all completed optimizer updates.
+- `optimizer_update_seconds`: time for the latest optimizer update.
+- `optimizer_compute_seconds`: cumulative optimizer-compute time in the current telemetry window, including previously checkpointed time when resuming.
+- `optimizer_compute_tokens_processed` and `timed_optimizer_updates`: counters that exactly match the cumulative compute-time window.
+- `optimizer_compute_tokens_per_second` and `optimizer_updates_per_second`: throughput derived from the matching counters and cumulative compute time.
+- `learning_rate`: the active learning rate at the reporting step.
+
+CUDA updates are synchronized immediately before and after timing so asynchronous kernels are included. These durations include batch sampling and host-to-device transfer inside the optimizer update, but exclude evaluation, checkpoint serialization and other idle/wall-clock time. Treat them as optimizer-pipeline throughput, not end-to-end job throughput.
+
+Timing values are measurements, not deterministic training state. A resumed run should reproduce its model weights and deterministic metrics, but elapsed times naturally differ from an uninterrupted run. Older resume checkpoints without telemetry metadata start a new measurement window at resume. Their pre-existing tokens are not incorrectly divided by only the post-resume time.
 
 ## Resume a run
 
