@@ -90,6 +90,34 @@ class TrainingResumeTests(unittest.TestCase):
                         corpus_sha256="fixture-hash",
                     )
 
+        inconsistent_counters = (
+            {"optimizer_compute_seconds": 1.0},
+            {"optimizer_compute_tokens_processed": 16},
+            {
+                "optimizer_compute_seconds": 1.0,
+                "optimizer_compute_tokens_processed": 15,
+                "timed_optimizer_updates": 1,
+            },
+            {
+                "optimizer_compute_seconds": 0.0,
+                "optimizer_compute_tokens_processed": 16,
+                "timed_optimizer_updates": 1,
+            },
+        )
+        for overrides in inconsistent_counters:
+            with self.subTest(overrides=overrides):
+                invalid_checkpoint = dict(checkpoint)
+                invalid_training = dict(checkpoint["training"])
+                invalid_training.update(overrides)
+                invalid_checkpoint["training"] = invalid_training
+                with self.assertRaises(ValueError):
+                    validate_resume_checkpoint(
+                        invalid_checkpoint,
+                        config=config,
+                        settings=settings,
+                        corpus_sha256="fixture-hash",
+                    )
+
     def test_training_cli_rejects_zero_gradient_accumulation(self):
         with patch("sys.argv", [
             "core.train",
