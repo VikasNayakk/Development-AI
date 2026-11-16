@@ -142,12 +142,11 @@ class HeldOutEvaluationManifestTests(unittest.TestCase):
             self.manifest_path,
             device=torch.device("cpu"),
             baseline_model=baseline,
-            baseline_seed=77,
         )
 
         comparison = result["baseline_comparison"]
         self.assertEqual(comparison["baseline_type"], "randomly_initialized_same_architecture")
-        self.assertEqual(comparison["baseline_seed"], 77)
+        self.assertIsNone(comparison["baseline_seed"])
         self.assertEqual(len(comparison["datasets"]), 6)
         self.assertEqual(len(comparison["language_split_metrics"]), 6)
         for item in comparison["datasets"]:
@@ -159,6 +158,12 @@ class HeldOutEvaluationManifestTests(unittest.TestCase):
             ))
         for group in comparison["language_split_metrics"]:
             self.assertAlmostEqual(group["loss_improvement"], 0.0, places=7)
+            trained_group = next(
+                metric for metric in result["language_split_metrics"]
+                if metric["language"] == group["language"]
+                and metric["split"] == group["split"]
+            )
+            self.assertEqual(group["tokens_scored"], trained_group["tokens_scored"])
 
     def test_baseline_rejects_same_instance_mismatched_config_and_invalid_seed(self):
         entries, _ = self.complete_fixture()
