@@ -36,6 +36,20 @@ A resumable checkpoint is saved every 100 steps by default and at the final step
 
 The default accumulation value of 1 preserves the previous single-batch update behavior. Earlier resumable checkpoints that predate the accumulation setting can resume only with accumulation 1. New resume checkpoints store the accumulation count and effective batch size; changing these when resuming is rejected.
 
+## Training telemetry
+
+At evaluation intervals, the metrics JSON and training log also record:
+
+- Cumulative supervised target-byte positions processed: optimizer updates × micro-batch size × accumulation steps × block size.
+- Time for the latest optimizer update.
+- Cumulative optimizer-compute time across the run, including previously checkpointed time when resuming.
+- Training tokens per second and optimizer updates per second, calculated from cumulative optimizer-compute time.
+- The active learning rate.
+
+CUDA updates are synchronized immediately before and after timing so asynchronous kernels are included. These durations include batch sampling and host-to-device transfer inside the optimizer update, but exclude evaluation, checkpoint serialization and other idle/wall-clock time. Treat them as optimizer-pipeline throughput, not end-to-end job throughput.
+
+Timing values are measurements, not deterministic training state. A resumed run should reproduce its model weights and deterministic metrics, but elapsed times naturally differ from an uninterrupted run. Older resume checkpoints without timing metadata resume with a cumulative optimizer-compute time of zero.
+
 ## Resume a run
 
 ```bash
