@@ -7,7 +7,7 @@ The architecture, training code, model weights and inference implementation are 
 1. From-scratch byte-level decoder-only Transformer and CPU generation.
 2. Reproducible training, held-out evaluation, best-checkpoint saving and automated quality checks.
 3. **Data engineering:** source rights manifest, path validation, provenance hashes, Unicode normalization, conservative privacy screening, exact deduplication, quality filters and script statistics.
-4. Tokenizer and model engineering, profiling and CPU memory optimization.
+4. Tokenizer and model engineering, profiling and CPU memory optimization. Current substage: experimental byte-level BPE implementation and benchmark; production model remains on the 256-token byte tokenizer until explicit acceptance gates pass.
 5. Project-owned inference runtime and stable local API.
 6. Instruction tuning on owned/licensed data, memory, planning, decisions and tool adapters.
 7. Safety, reliability, benchmarks and release engineering.
