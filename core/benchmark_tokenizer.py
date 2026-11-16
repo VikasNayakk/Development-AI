@@ -103,7 +103,8 @@ def _evaluate(tokenizer, documents: list[str]) -> dict:
             bpe_token_count / encoding_seconds if encoding_seconds else None
         ),
         "round_trip_exact": all(
-            tokenizer.decode(tokenizer.encode(doc)) == doc for doc in documents
+            tokenizer.decode(tokens) == doc
+            for doc, tokens in zip(documents, encoded_documents)
         ),
     }
 
