@@ -256,7 +256,7 @@ def main():
                 "actual_vocab_size": tokenizer.vocab_size,
                 "merge_count": len(tokenizer.merges),
                 "training_seconds": training_seconds,
-                "artifact": str(artifact_path),
+                "artifact": artifact_name,
                 "artifact_sha256": artifact["sha256"],
                 "evaluations": evaluations,
             }
