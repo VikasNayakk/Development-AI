@@ -230,6 +230,68 @@ class ByteLevelBPETokenizerTests(unittest.TestCase):
             self.assertGreater(report["results"][0]["actual_vocab_size"], 256)
             self.assertLessEqual(report["results"][0]["actual_vocab_size"], 270)
 
+    def test_multilingual_benchmark_compares_each_language_and_combined(self):
+        samples = {
+            "hindi": "मुझे अपना AI model बनाना है।\n\nअगला काम quality के साथ करो।",
+            "english": "Build an independent local AI model.\n\nRun tests before merging code.",
+            "hinglish": "Mujhe apna AI model banana hai.\n\nNext kaam quality ke sath karo.",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {}
+            for language, sample in samples.items():
+                path = root / f"{language}.txt"
+                path.write_text(sample, encoding="utf-8")
+                paths[language] = path
+
+            output = root / "results"
+            arguments = [
+                "benchmark_tokenizer",
+                "--data-hindi", str(paths["hindi"]),
+                "--data-english", str(paths["english"]),
+                "--data-hinglish", str(paths["hinglish"]),
+                "--output-dir", str(output),
+                "--vocab-sizes", "270",
+                "--max-training-bytes", "5000",
+            ]
+            with patch("sys.argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+                benchmark_main()
+
+            report = json.loads(
+                (output / "benchmark-report.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(report["mode"], "multilingual")
+            self.assertEqual(
+                set(report["corpora"]), {"hindi", "english", "hinglish"}
+            )
+            self.assertEqual(len(report["models"]), 4)
+            self.assertEqual(
+                {model["trained_on"] for model in report["models"]},
+                {"hindi", "english", "hinglish", "combined"},
+            )
+            for model in report["models"]:
+                self.assertEqual(
+                    set(model["evaluations"]),
+                    {"hindi", "english", "hinglish", "combined"},
+                )
+                self.assertTrue(
+                    all(result["round_trip_exact"] for result in model["evaluations"].values())
+                )
+                self.assertTrue((output / Path(model["artifact"]).name).is_file())
+
+    def test_multilingual_benchmark_requires_all_three_languages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hindi = root / "hindi.txt"
+            hindi.write_text("नमस्ते", encoding="utf-8")
+            arguments = [
+                "benchmark_tokenizer",
+                "--data-hindi", str(hindi),
+                "--vocab-sizes", "256",
+            ]
+            with patch("sys.argv", arguments), self.assertRaises(SystemExit):
+                benchmark_main()
+
     def test_benchmark_cli_rejects_oversized_corpus_before_full_read(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
