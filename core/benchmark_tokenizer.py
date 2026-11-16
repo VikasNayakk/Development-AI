@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -43,12 +44,12 @@ def _read_corpus(path: str, label: str, byte_limit: int) -> dict:
     except UnicodeDecodeError as error:
         raise ValueError(f"{label} corpus is not valid UTF-8: {error}") from error
 
-    documents = [part.strip() for part in text.split("\n\n") if part.strip()]
+    documents = [part.strip() for part in re.split(r"\r?\n[ \t]*\r?\n", text) if part.strip()]
     if not documents:
         raise ValueError(f"{label} corpus contains no non-empty documents.")
 
     return {
-        "path": str(corpus_path),
+        "path": corpus_path.name,
         "raw_bytes": len(raw),
         "sha256": hashlib.sha256(raw).hexdigest(),
         "documents": documents,
@@ -79,7 +80,8 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
 
 
 def _evaluate(tokenizer, documents: list[str]) -> dict:
-    byte_token_count = sum(len(ByteTokenizer().encode(doc)) for doc in documents)
+    byte_tokenizer = ByteTokenizer()
+    byte_token_count = sum(len(byte_tokenizer.encode(doc)) for doc in documents)
     started = time.perf_counter()
     encoded_documents = [tokenizer.encode(doc) for doc in documents]
     encoding_seconds = time.perf_counter() - started
