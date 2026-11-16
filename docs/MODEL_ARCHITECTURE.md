@@ -56,7 +56,8 @@ The experimental `utf8-byte-bpe-v1` tokenizer is deliberately not wired into mod
 
 - Preserve the current byte tokenizer and checkpoint format.
 - Run deterministic smoke training on synthetic data in CI only.
-- Record parameter count, model configuration, training throughput, validation loss and generation latency.
+- Completed: add a local synthetic benchmark for optimizer-update throughput, supervised tokens per second, greedy-generation latency, environment metadata and CUDA peak allocated memory. This measures runtime performance only, not answer quality.
+- Still pending: record real-corpus training throughput and per-language validation loss on documented hardware.
 - Keep synthetic CI data separate from real training data.
 
 ### Stage B — Data and evaluation readiness
@@ -136,9 +137,9 @@ Passing unit tests proves software behavior, not answer quality.
 ## Immediate next engineering tasks
 
 1. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
-2. Record training throughput, tokens processed and generation latency on documented hardware.
+2. Run the synthetic benchmark on the target hardware and preserve the report as a baseline; later compare it with real-corpus training measurements.
 3. Add mixed precision only after numerical stability and resume behavior have separate tests.
 
-Completed foundation items include the reproducible model-parameter/configuration report, resumable training checkpoints with optimizer and RNG state, generation input validation with deterministic decoding controls, held-out per-language validation/test evaluation, and tested gradient accumulation with effective-batch reporting.
+Completed foundation items include the reproducible model-parameter/configuration report, resumable training checkpoints with optimizer and RNG state, generation input validation with deterministic decoding controls, held-out per-language validation/test evaluation, tested gradient accumulation with effective-batch reporting, and a synthetic training/generation performance benchmark.
 
 Each task should be implemented on a feature branch, covered by tests, and reviewed through a pull request. Do not merge an unverified tokenizer migration or commit private prompt data.
