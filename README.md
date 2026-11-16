@@ -1,39 +1,63 @@
-# Development AI
+# Development-AI
 
-A browser-extension-first AI assistant powered by a local model through Ollama.
+An independent, local-first AI research and development project. The long-term goal is to build and train our own model architecture, own model weights, and own inference/runtime layer so compatible tools can connect to a local machine through a documented API.
 
-## Current status
-Version 0.4.0: extension chat, local conversation storage, Node.js gateway, Ollama integration, model availability status and backend integration tests are implemented. The Ollama runtime and model must be installed on the computer before live local inference works.
+## Non-negotiable design goals
+- No required cloud AI API.
+- No required third-party pretrained model or model runtime.
+- Model weights must be produced by our own training pipeline from randomly initialized parameters.
+- Local CPU inference is a supported baseline; performance depends on hardware and model size.
+- External tools connect through a local, documented interface.
+- Training data is supplied and controlled by the project owner.
 
-## Install local AI runtime
-1. Install Ollama for your operating system from https://ollama.com/download.
-2. Start Ollama.
-3. In a terminal, download a model:
-   `ollama pull qwen2.5:7b`
-4. Confirm the model is available:
-   `ollama list`
+## Current milestone: from-scratch model foundation
+The `core/` directory contains:
+- A byte-level tokenizer (fixed 256-token vocabulary).
+- A decoder-only causal Transformer implemented in PyTorch.
+- A training script that initializes weights randomly and trains only on a local text file.
+- A CPU-capable inference script that loads this project's own checkpoint.
+- Basic unit tests.
 
-The default model is `qwen2.5:7b`. Model memory requirements depend on quantization and hardware. If the computer has limited RAM/VRAM, select a smaller model and set the same model tag in `backend/.env`.
+This is a small research prototype, not a capable general-purpose assistant yet. A byte-level model trained on a small private corpus will initially produce weak and often incoherent text. Capability must be earned through data quality, compute, training, evaluation, and iterative architecture work.
 
-## Configure and start the backend
-1. Install Node.js 20.6 or newer.
-2. Open a terminal in `backend/`.
-3. Copy `.env.example` to `.env`.
-4. Set `ALLOWED_EXTENSION_ORIGINS=chrome-extension://YOUR_EXTENSION_ID` after loading the extension.
-5. Keep the default Ollama settings unless Ollama uses a different local port/model.
-6. Run `npm start`.
+## Requirements
+- Python 3.10+
+- PyTorch (CPU build is sufficient to start)
 
-The backend defaults to `http://127.0.0.1:8787`; Ollama defaults to `http://127.0.0.1:11434`. No cloud API key is required for local Ollama inference.
+Install:
+```bash
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-## Load the extension
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Select **Load unpacked** and choose this repository folder.
-4. Copy the extension ID and add its exact origin to `backend/.env`.
-5. Start Ollama, then the backend, and open the extension popup.
+## Train from scratch
+1. Put your own UTF-8 plain-text training corpus at `data/train.txt` (do not commit private or sensitive data).
+2. Run:
+```bash
+python -m core.train --data data/train.txt --steps 1000 --device cpu
+```
+3. The training process creates a checkpoint under `artifacts/` (ignored by Git).
 
-## Test
-From `backend/`, run `npm run check` and `npm test`. The integration tests use a mock Ollama-compatible local server and do not download a model or call an external AI service.
+## Generate text
+```bash
+python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-new-tokens 120 --device cpu
+```
 
-## Privacy and security
-Prompts are sent to the local Ollama service through the local backend. No cloud AI provider is used by the default configuration. Provider/model software may have its own license and data-handling terms. The backend is local-development scaffolding and is not hardened for public network exposure.
+The checkpoint must be created by this repository's own training code. No pretrained weights are downloaded or loaded.
+
+## Important limits
+- This milestone is a minimal language-model research baseline, not a complete reasoning/decision agent.
+- CPU training may be slow. Start with a small corpus and modest step count.
+- The current model has no tool execution, long-term memory, planning, safety policy, or external-tool API yet.
+- Never train on secrets, credentials, private third-party data, or data without appropriate rights.
+- Do not expose future local APIs to a network until authentication, authorization, request limits, and audit logging are implemented.
+
+## Roadmap
+1. From-scratch model + CPU inference foundation (current).
+2. Reproducible training, checkpoint metadata, evaluation and experiment tracking.
+3. Tokenizer/data pipeline improvements and larger context handling.
+4. Local inference service with authentication and stable API contract.
+5. Memory, planning, decision policies, and tool adapter framework.
+6. Curated datasets, instruction tuning, safety evaluation, and model improvements.
