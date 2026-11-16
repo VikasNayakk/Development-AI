@@ -84,12 +84,15 @@ def optimizer_update(
         raise ValueError("block_size must be a positive integer.")
     if type(gradient_accumulation_steps) is not int or gradient_accumulation_steps <= 0:
         raise ValueError("gradient_accumulation_steps must be a positive integer.")
-    if (
-        isinstance(max_grad_norm, bool)
-        or not isinstance(max_grad_norm, (int, float))
-        or not math.isfinite(max_grad_norm)
-        or max_grad_norm <= 0
-    ):
+    try:
+        grad_norm_is_finite = (
+            not isinstance(max_grad_norm, bool)
+            and isinstance(max_grad_norm, (int, float))
+            and math.isfinite(max_grad_norm)
+        )
+    except OverflowError:
+        grad_norm_is_finite = False
+    if not grad_norm_is_finite or max_grad_norm <= 0:
         raise ValueError("max_grad_norm must be finite and greater than zero.")
 
     optimizer.zero_grad(set_to_none=True)
