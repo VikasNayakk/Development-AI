@@ -8,12 +8,12 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 
-EMAIL_RE = re.compile(r"(?i)(?<![\\w.+-])[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+")
-PHONE_RE = re.compile(r"(?<!\\w)(?:\\+?\\d[\\d .()/-]{8,}\\d)(?!\\w)")
+EMAIL_RE = re.compile(r"(?i)(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d .()/-]{8,}\d)(?!\w)")
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 SECRET_RE = re.compile(
-    r"(?i)\\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\\b"
-    r"\\s*[:=]\\s*['\\"]?[A-Za-z0-9_./+\\-=]{12,}"
+    r"(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\b"
+    r"\s*[:=]\s*['\"]?[A-Za-z0-9_./+\-=]{12,}"
 )
 
 
@@ -22,15 +22,15 @@ class DatasetError(ValueError):
 
 
 def normalize_text(text: str) -> str:
-    text = unicodedata.normalize("NFC", text.replace("\\r\\n", "\\n").replace("\\r", "\\n"))
+    text = unicodedata.normalize("NFC", text.replace("\r\n", "\n").replace("\r", "\n"))
     cleaned = []
     for char in text:
         category = unicodedata.category(char)
-        if char in "\\n\\t" or category[0] != "C":
+        if char in "\n\t" or category[0] != "C":
             cleaned.append(char)
-    lines = [" ".join(line.split()) for line in "".join(cleaned).split("\\n")]
-    normalized = "\\n".join(lines)
-    normalized = re.sub(r"\\n{3,}", "\\n\\n", normalized)
+    lines = [" ".join(line.split()) for line in "".join(cleaned).split("\n")]
+    normalized = "\n".join(lines)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
     return normalized.strip()
 
 
@@ -50,7 +50,7 @@ def privacy_flags(text: str) -> list[str]:
 def repeated_character_ratio(text: str) -> float:
     if not text:
         return 1.0
-    repeated = sum(len(match.group(0)) for match in re.finditer(r"(.)\\1{7,}", text))
+    repeated = sum(len(match.group(0)) for match in re.finditer(r"(.)\1{7,}", text))
     return repeated / len(text)
 
 
@@ -60,7 +60,7 @@ def script_counts(text: str) -> dict[str, int]:
         code = ord(char)
         if 0x0900 <= code <= 0x097F:
             counts["devanagari"] += 1
-        elif ("LATIN" in unicodedata.name(char, "")):
+        elif "LATIN" in unicodedata.name(char, ""):
             counts["latin"] += 1
         elif char.isalpha():
             counts["other"] += 1
@@ -154,7 +154,7 @@ def prepare_dataset(manifest_path: Path, output_dir: Path, *, min_chars: int = 8
         raise DatasetError("No documents passed validation; no training corpus was written.")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    corpus = "\\n\\n".join(output_parts) + "\\n"
+    corpus = "\n\n".join(output_parts) + "\n"
     report = {
         "format_version": 1,
         "manifest_file": manifest_path.name,
@@ -168,8 +168,8 @@ def prepare_dataset(manifest_path: Path, output_dir: Path, *, min_chars: int = 8
         "corpus_sha256": hashlib.sha256(corpus.encode("utf-8")).hexdigest(),
         "corpus_characters": len(corpus),
     }
-    (output_dir / "train.txt").write_text(corpus, encoding="utf-8", newline="\\n")
+    (output_dir / "train.txt").write_text(corpus, encoding="utf-8", newline="\n")
     (output_dir / "dataset_report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8"
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return report
