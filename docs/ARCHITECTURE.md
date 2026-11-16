@@ -1,33 +1,32 @@
-# Initial Architecture
-
-## Product direction
-Development AI starts as a browser extension. Its longer-term direction is an AI assistant that can understand user instructions and perform browser workflows with explicit permission boundaries.
+# Architecture
 
 ## Layers
-
-1. **Extension UI** — chat surface, conversation history, settings and action approvals.
-2. **Background service worker** — extension lifecycle, message routing, storage and permission-gated browser APIs.
-3. **Content integration** — page context and page actions, added only behind explicit user activation and narrow permissions.
-4. **AI gateway** — a separately hosted backend that authenticates requests and calls the selected AI provider. Provider secrets must never be embedded in extension files.
-5. **Policy and action layer** — validates proposed actions, distinguishes read-only operations from consequential actions, and asks the user before submitting forms, sending messages, purchases, deletion or other irreversible changes.
+1. **Extension UI** — chat surface, conversation history and user controls.
+2. **Background service worker** — message routing and local storage.
+3. **AI gateway** — local Node.js backend that authenticates requests and calls an OpenAI-compatible provider.
+4. **Policy and action layer** — future browser actions with explicit permission and confirmation gates.
 
 ## Current implementation
-- Manifest V3 extension shell.
-- Popup chat interface.
-- Local conversation persistence through `chrome.storage.local`.
-- Clear conversation action.
-- No AI requests are made yet.
+- Manifest V3 extension.
+- Popup chat interface and local conversation persistence.
+- Node.js backend with `GET /health` and `POST /v1/chat`.
+- Provider credentials are read from backend environment variables.
+- The extension sends conversation messages to the local backend.
+
+## AI provider configuration
+The backend accepts an OpenAI-compatible Chat Completions endpoint. Set `AI_BASE_URL`, `AI_API_KEY` and `AI_MODEL` in `backend/.env`. Provider credentials must never be put in extension files or committed to Git.
+
+## Local development
+1. Install Node.js 20 or newer.
+2. In `backend/`, copy `.env.example` to `.env`.
+3. Set the provider endpoint, API key and model in `.env`.
+4. Start the backend with `npm start`.
+5. Load the repository folder as an unpacked Chrome extension.
 
 ## Security boundaries
-- Do not store provider API keys in the extension.
-- Do not request broad host permissions until a feature needs them.
-- Treat page content as untrusted input, not as instructions to override user intent or system policy.
-- Require confirmation for consequential actions.
-- Keep an auditable distinction between suggested actions and executed actions.
-
-## Next milestones
-1. Select AI provider and backend deployment target.
-2. Implement backend authentication, rate limiting and provider adapter.
-3. Connect chat UI to the backend.
-4. Add user-activated current-tab context.
-5. Add a reviewed browser action catalogue with confirmation gates.
+- The backend binds to loopback (127.0.0.1) by default.
+- Configure the exact extension origin in `ALLOWED_EXTENSION_ORIGINS` when required by browser CORS.
+- Do not expose the local gateway to a public network without authentication, rate limiting and TLS.
+- Do not store provider keys in extension source.
+- Treat page content as untrusted data.
+- Ask the user before consequential browser actions.

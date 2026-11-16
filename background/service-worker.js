@@ -1,26 +1,34 @@
 const MAX_MESSAGES = 100;
+const MAX_MESSAGE_CHARS = 8000;
 
 chrome.runtime.onInstalled.addListener(() => {
   console.info("Development AI extension installed.");
 });
 
+function isValidContent(content) {
+  return typeof content === "string" &&
+    content.trim().length > 0 &&
+    content.length <= MAX_MESSAGE_CHARS;
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === "SAVE_USER_MESSAGE") {
-    const content = typeof message.content === "string" ? message.content.trim() : "";
-    if (!content || content.length > 8000) {
+  if (message?.type === "SAVE_USER_MESSAGE" || message?.type === "SAVE_ASSISTANT_MESSAGE" || message?.type === "SAVE_NOTICE") {
+    const content = message.content;
+    if (!isValidContent(content)) {
       sendResponse({ ok: false, error: "Message must contain 1–8000 characters." });
       return false;
     }
 
+    const role = {
+      SAVE_USER_MESSAGE: "user",
+      SAVE_ASSISTANT_MESSAGE: "assistant",
+      SAVE_NOTICE: "notice"
+    }[message.type];
+
     chrome.storage.local.get({ conversation: [] }).then(({ conversation }) => {
       const next = [
         ...conversation,
-        { role: "user", content, createdAt: new Date().toISOString() },
-        {
-          role: "notice",
-          content: "Message saved locally. AI is not connected yet, so this message has not been processed.",
-          createdAt: new Date().toISOString()
-        }
+        { role, content: content.trim(), createdAt: new Date().toISOString() }
       ].slice(-MAX_MESSAGES);
 
       return chrome.storage.local.set({ conversation: next }).then(() => {
