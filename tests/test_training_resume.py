@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import torch
 
+from core.config import ModelConfig
 from core.train import (
     RESUME_CHECKPOINT_TYPE,
     _training_settings_match,
