@@ -112,8 +112,8 @@ Choose model size based on available compute, memory, tokens processed and held-
 
 Only after training and evaluation are reliable:
 - Define a stable inference interface independent of the training CLI.
-- Validate prompt length, token IDs, temperature and output limits.
-- Add deterministic sampling mode for tests.
+- Completed: validate generation tensor type/shape/device, token-ID range, finite temperature and output-token limit.
+- Completed: add deterministic greedy decoding and optional seeded sampling; sampling remains the compatibility default.
 - Add request limits, timeouts and structured error responses.
 - Expose a local HTTP API with health and model-metadata endpoints.
 - Keep the API local by default; authentication and network exposure must be explicit.
@@ -134,12 +134,11 @@ Passing unit tests proves software behavior, not answer quality.
 
 ## Immediate next engineering tasks
 
-1. Add deterministic sampling controls and stronger generation input validation.
-2. Add a held-out evaluation manifest and per-language metrics.
-3. Add gradient accumulation and validate its effective-batch behavior.
-4. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
-5. Record training throughput, tokens processed and generation latency on documented hardware.
+1. Add a held-out evaluation manifest and per-language metrics.
+2. Add gradient accumulation and validate its effective-batch behavior.
+3. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
+4. Record training throughput, tokens processed and generation latency on documented hardware.
 
-Completed foundation items include the reproducible model-parameter/configuration report and resumable training checkpoints with optimizer and RNG state.
+Completed foundation items include the reproducible model-parameter/configuration report, resumable training checkpoints with optimizer and RNG state, and generation input validation with deterministic decoding controls.
 
 Each task should be implemented on a feature branch, covered by tests, and reviewed through a pull request. Do not merge an unverified tokenizer migration or commit private prompt data.
