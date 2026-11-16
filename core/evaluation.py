@@ -328,6 +328,12 @@ def evaluate_manifest(
             score_documents(baseline_model, dataset.documents, device=device)
             if baseline_model is not None else None
         )
+        if baseline_metrics is not None and (
+            baseline_metrics["tokens_scored"] != metrics["tokens_scored"]
+        ):
+            raise RuntimeError(
+                "Trained and baseline models did not score the same number of targets."
+            )
         result = {
             "dataset_id": dataset.dataset_id,
             "filename": dataset.filename,
