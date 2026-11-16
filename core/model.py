@@ -121,7 +121,11 @@ class DevelopmentAIModel(nn.Module):
             raise ValueError("max_new_tokens cannot be negative.")
         if isinstance(temperature, bool) or not isinstance(temperature, (int, float)):
             raise TypeError("temperature must be a finite number.")
-        if not math.isfinite(temperature) or temperature <= 0:
+        try:
+            temperature_is_finite = math.isfinite(temperature)
+        except OverflowError:
+            temperature_is_finite = False
+        if not temperature_is_finite or temperature <= 0:
             raise ValueError("temperature must be finite and greater than zero.")
         if not isinstance(do_sample, bool):
             raise TypeError("do_sample must be a boolean.")
