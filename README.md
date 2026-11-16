@@ -76,6 +76,15 @@ python -m core.evaluate --checkpoint artifacts/latest.pt --manifest data/evaluat
 
 The report gives separate Hindi, English and Hinglish metrics for validation and test. Raw evaluation text and manifest files stay local and must not be committed.
 
+## Performance benchmark
+Run a local synthetic benchmark for optimizer-update throughput, supervised tokens per second, greedy-generation latency and CUDA peak allocated memory:
+
+```bash
+python -m core.benchmark_training --device cpu --warmup-steps 2 --steps 10 --batch-size 2 --gradient-accumulation-steps 1 --generation-tokens 16 --output artifacts/performance-baseline.json
+```
+
+The report records hardware/software context. Synthetic throughput is not a model-quality metric and may differ from real-corpus training. See [docs/TRAINING_BENCHMARK.md](docs/TRAINING_BENCHMARK.md) for metric definitions and limitations.
+
 ## Quality checks
 ```bash
 python -m compileall -q core tests
