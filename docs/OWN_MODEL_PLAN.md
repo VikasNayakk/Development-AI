@@ -1,25 +1,27 @@
 # Own-model development plan
 
-## Product definition
-Build a local-first AI system with its own model architecture, training pipeline, trained weights, inference implementation, memory and decision/tool layers. Compatible applications should connect to a local service. Cloud AI and third-party pretrained weights are not required dependencies.
-
-## What “independent” means
-- The model architecture and training/inference code are maintained in this repository.
-- Weights are initialized randomly and produced by our training runs.
-- No pretrained checkpoint, hosted model API, Ollama runtime, or third-party model is loaded.
-- Standard numerical/ML libraries (initially PyTorch) may be used as implementation infrastructure. If the goal later includes removing framework dependencies too, that is a separate compiler/runtime project.
+## Independence definition
+The architecture, training code, model weights and inference implementation are maintained by this project. We do not load pretrained weights, call hosted AI APIs, or require Ollama/another model runtime. PyTorch is currently a numerical/training dependency; replacing it with a custom optimized CPU runtime is a later engineering milestone.
 
 ## Milestones
-1. **Research baseline (implemented):** byte tokenizer, decoder-only Transformer, random initialization, local-corpus training, local checkpoint, CPU generation.
-2. **Reproducibility:** train/validation split, deterministic experiment metadata, checkpoint versioning, loss curves and evaluation scripts.
-3. **Data engineering:** corpus ingestion, deduplication, quality filters, language balance, licensing/provenance manifest and privacy filters.
-4. **Model engineering:** tokenizer alternatives, context scaling, parameter sizing, profiling and memory optimization for target CPUs.
-5. **Inference runtime:** optimized CPU kernels, streaming generation, batching, model loading safeguards and stable local HTTP API.
-6. **Assistant capabilities:** instruction tuning on owned/licensed data, structured outputs, tool schemas, planning, memory retrieval and decision evaluation.
-7. **Release readiness:** benchmark suite, safety tests, model card, license review, reproducible builds and signed releases.
+1. **From-scratch baseline:** byte tokenizer, decoder-only Transformer, random initialization, local training and CPU generation.
+2. **Training quality (current):** sequential held-out validation split, train/validation loss estimation, best-validation checkpoint, metrics JSON, checkpoint format version and unit tests.
+3. **Data engineering:** dataset provenance, rights/licensing, deduplication, quality filters, privacy controls and language balance.
+4. **Model engineering:** tokenizer experiments, context scaling, parameter sizing, profiling and CPU memory optimization.
+5. **Independent inference runtime:** optimized CPU kernels, streaming, stable API, model format and integrity checks.
+6. **Assistant capabilities:** instruction tuning, structured output, memory retrieval, planning, tool schemas and decision benchmarks.
+7. **Release readiness:** reproducible benchmarks, safety evaluation, model card, licensing review and signed releases.
 
-## Honest capability limits
-The first model is deliberately tiny and randomly initialized. It will not behave like a pretrained assistant. It must be trained on a substantial, high-quality corpus and evaluated. CPU-only training of a capable general-purpose language model is not realistic for an individual workstation; CPU is supported for small experiments and inference of appropriately sized models. Larger training may require GPUs and substantial compute.
+## Evaluation rules
+- Keep training and validation segments disjoint.
+- Compare checkpoints on a fixed, documented held-out corpus.
+- Track both training and validation loss; a widening gap can indicate overfitting.
+- Treat byte-token perplexity as a tokenizer-specific metric, not a direct measure of reasoning or helpfulness.
+- Never claim model quality from training loss alone.
+- Record seed, model configuration, data size, training steps and evaluation results.
+
+## Current limitations
+This model is randomly initialized and intentionally small. It is not a pretrained assistant and will initially generate low-quality text. A capable general-purpose model requires large, carefully governed datasets, substantial compute, and extensive evaluation. CPU is practical for small experiments and appropriately sized inference, not economical for training a frontier-scale model.
 
 ## Data governance
-Use only data the project owner has rights to use. Keep personal, confidential, credential, and sensitive records out of training corpora unless there is a documented lawful basis and appropriate safeguards. Keep datasets and model checkpoints out of Git by default.
+Use only data with appropriate rights. Exclude secrets, credentials and sensitive personal records. Keep data and checkpoints out of Git by default.

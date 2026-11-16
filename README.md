@@ -1,30 +1,23 @@
 # Development-AI
 
-An independent, local-first AI research and development project. The long-term goal is to build and train our own model architecture, own model weights, and own inference/runtime layer so compatible tools can connect to a local machine through a documented API.
+An independent, local-first AI research project. The long-term objective is to own the model architecture, training pipeline, trained weights, inference runtime, memory and tool-decision layers.
 
-## Non-negotiable design goals
-- No required cloud AI API.
-- No required third-party pretrained model or model runtime.
-- Model weights must be produced by our own training pipeline from randomly initialized parameters.
-- Local CPU inference is a supported baseline; performance depends on hardware and model size.
-- External tools connect through a local, documented interface.
-- Training data is supplied and controlled by the project owner.
+## Independence requirements
+- No required hosted AI API.
+- No required pretrained model or external model runtime.
+- Model weights are initialized randomly and learned by this repository's training code.
+- CPU is the supported baseline for small experiments and local inference.
+- Compatible applications will connect to a local API in a later milestone.
 
-## Current milestone: from-scratch model foundation
-The `core/` directory contains:
-- A byte-level tokenizer (fixed 256-token vocabulary).
-- A decoder-only causal Transformer implemented in PyTorch.
-- A training script that initializes weights randomly and trains only on a local text file.
-- A CPU-capable inference script that loads this project's own checkpoint.
-- Basic unit tests.
+Standard numerical libraries are permitted as implementation infrastructure. They do not supply pretrained intelligence or model weights.
 
-This is a small research prototype, not a capable general-purpose assistant yet. A byte-level model trained on a small private corpus will initially produce weak and often incoherent text. Capability must be earned through data quality, compute, training, evaluation, and iterative architecture work.
+## Current milestone
+A byte-level decoder-only Transformer, random initialization, local-corpus training, disjoint validation, best-validation checkpointing, metrics export, and CPU/CUDA text generation.
 
-## Requirements
-- Python 3.10+
-- PyTorch (CPU build is sufficient to start)
+This is a small research model, not a useful general-purpose assistant yet. Early output will likely be incoherent. Capability requires substantial high-quality data, compute, evaluation, and iteration.
 
-Install:
+## Setup
+Python 3.10+ is recommended. Install PyTorch for your platform, then:
 ```bash
 python -m venv .venv
 # Windows: .venv\\Scripts\\activate
@@ -33,31 +26,36 @@ pip install -r requirements.txt
 ```
 
 ## Train from scratch
-1. Put your own UTF-8 plain-text training corpus at `data/train.txt` (do not commit private or sensitive data).
-2. Run:
+Place an owned/licensed UTF-8 text corpus at `data/train.txt`. Keep private datasets out of Git.
 ```bash
 python -m core.train --data data/train.txt --steps 1000 --device cpu
 ```
-3. The training process creates a checkpoint under `artifacts/` (ignored by Git).
+The script splits the corpus sequentially into training and held-out validation portions, reports both losses, and saves the best validation checkpoint to `artifacts/latest.pt`. Metrics are written to `artifacts/latest.metrics.json`.
 
-## Generate text
+## Evaluate a checkpoint
+```bash
+python -m core.evaluate --checkpoint artifacts/latest.pt --data data/train.txt --device cpu
+```
+The reported perplexity is byte-token perplexity and should only be compared using the same tokenizer and evaluation corpus.
+
+## Generate
 ```bash
 python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-new-tokens 120 --device cpu
 ```
 
-The checkpoint must be created by this repository's own training code. No pretrained weights are downloaded or loaded.
-
-## Important limits
-- This milestone is a minimal language-model research baseline, not a complete reasoning/decision agent.
-- CPU training may be slow. Start with a small corpus and modest step count.
-- The current model has no tool execution, long-term memory, planning, safety policy, or external-tool API yet.
-- Never train on secrets, credentials, private third-party data, or data without appropriate rights.
-- Do not expose future local APIs to a network until authentication, authorization, request limits, and audit logging are implemented.
+## Quality checks
+```bash
+python -m unittest discover -s tests -v
+python -m compileall -q core tests
+```
 
 ## Roadmap
-1. From-scratch model + CPU inference foundation (current).
-2. Reproducible training, checkpoint metadata, evaluation and experiment tracking.
-3. Tokenizer/data pipeline improvements and larger context handling.
-4. Local inference service with authentication and stable API contract.
-5. Memory, planning, decision policies, and tool adapter framework.
-6. Curated datasets, instruction tuning, safety evaluation, and model improvements.
+1. From-scratch model and training/evaluation baseline (current).
+2. Reproducible experiments, dataset manifests, and benchmark suite.
+3. Tokenizer and data engineering improvements.
+4. CPU inference optimization and stable local API.
+5. Instruction tuning on owned/licensed data, memory, planning, decisions, and tool adapters.
+6. Safety, reliability, documentation, and release engineering.
+
+## Data and security
+Use only data you have rights to use. Do not train on credentials, secrets, or sensitive personal data. Checkpoints and datasets are ignored by Git. Do not expose a future local API to a network without authentication, authorization, rate limits, and audit logs.
