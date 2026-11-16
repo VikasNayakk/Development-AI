@@ -28,6 +28,7 @@ class TrainingResumeTests(unittest.TestCase):
             "--eval-iters", "1",
             "--validation-fraction", "0.2",
             "--resume-interval", "2",
+            "--gradient-accumulation-steps", "2",
             "--seed", "123",
         ]
 
@@ -67,6 +68,11 @@ class TrainingResumeTests(unittest.TestCase):
             resumed = torch.load(split_resume, map_location="cpu", weights_only=True)
             uninterrupted = torch.load(full_resume, map_location="cpu", weights_only=True)
             self.assertEqual(resumed["training"]["steps_completed"], 4)
+            self.assertEqual(
+                resumed["training"]["settings"]["gradient_accumulation_steps"], 2
+            )
+            self.assertEqual(resumed["training"]["settings"]["effective_batch_size"], 4)
+            self.assertEqual(resumed["history"][-1]["effective_batch_size"], 4)
             self.assertEqual(
                 [entry["step"] for entry in resumed["history"]],
                 [1, 2, 4],
