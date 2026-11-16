@@ -643,6 +643,8 @@ def main():
                         "corpus_bytes": len(data),
                         "corpus_sha256": corpus_sha256,
                         "optimizer_compute_seconds": optimizer_compute_seconds,
+                        "optimizer_compute_tokens_processed": optimizer_compute_tokens_processed,
+                        "timed_optimizer_updates": timed_optimizer_updates,
                     },
                 }
                 atomic_save_checkpoint(payload, output_path)
