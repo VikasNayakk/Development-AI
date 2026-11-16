@@ -27,12 +27,13 @@ def _synchronize_device(device: torch.device) -> None:
 
 
 def _validate_elapsed_seconds(value) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value < 0
-    ):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("Resume checkpoint has invalid optimizer compute time.")
+    try:
+        is_finite = math.isfinite(value)
+    except OverflowError:
+        is_finite = False
+    if not is_finite or value < 0:
         raise ValueError("Resume checkpoint has invalid optimizer compute time.")
     return float(value)
 
