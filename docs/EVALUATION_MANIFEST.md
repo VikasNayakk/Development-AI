@@ -70,9 +70,7 @@ Include all six language/split combinations for a complete report. Partial manif
 python -m core.evaluate \
   --checkpoint artifacts/latest.pt \
   --manifest data/evaluation/manifest.json \
-  --device cpu \
-  --compare-untrained \
-  --baseline-seed 42
+  --device cpu
 ```
 
 The existing single-file command remains available:
