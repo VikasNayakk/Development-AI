@@ -1,24 +1,45 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Development AI</title>
-    <link rel="stylesheet" href="popup.css">
-  </head>
-  <body>
-    <main class="app">
-      <header class="header">
-        <h1>Development AI</h1>
-        <p>Browser assistant foundation</p>
-      </header>
-      <section class="status" aria-live="polite">
-        <span class="status-dot"></span>
-        <span id="status">Extension is ready</span>
-      </section>
-      <button id="checkButton" type="button">Check extension</button>
-      <p class="note">AI connection is not configured yet.</p>
-    </main>
-    <script src="popup.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Development AI</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">AI</div>
+        <div>
+          <h1>Development AI</h1>
+          <p>Browser assistant</p>
+        </div>
+      </div>
+      <button class="icon-button" id="clearButton" type="button" title="Clear conversation" aria-label="Clear conversation">⌫</button>
+    </header>
+
+    <section class="connection" aria-live="polite">
+      <span class="connection-dot"></span>
+      <span id="connectionText">AI service not connected</span>
+    </section>
+
+    <section class="conversation" id="conversation" aria-label="Conversation">
+      <div class="welcome" id="welcome">
+        <div class="welcome-mark">✦</div>
+        <h2>How can I help?</h2>
+        <p>Your browser assistant workspace is ready. AI connectivity is the next setup step.</p>
+      </div>
+      <div class="messages" id="messages"></div>
+    </section>
+
+    <form class="composer" id="composer">
+      <label class="sr-only" for="messageInput">Message Development AI</label>
+      <textarea id="messageInput" rows="2" maxlength="8000" placeholder="Message Development AI…" required></textarea>
+      <button class="send-button" id="sendButton" type="submit" aria-label="Save message">↑</button>
+    </form>
+    <p class="footnote" id="footnote">Messages are saved locally in this browser. They are not sent to an AI model yet.</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
 </html>

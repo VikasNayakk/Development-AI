@@ -1,16 +1,22 @@
 # Development AI
 
-A clean starting point for the AI development project.
+A browser-extension-first AI assistant project.
 
-## Current direction
-Build an AI-powered browser extension foundation that can assist with browser workflows and later expand through clearly permissioned automation.
+## Current status
+Version 0.2.0: extension popup chat workspace and local conversation storage are implemented. AI provider connectivity is not configured, so messages are stored locally and are not sent to a model.
 
-## Development principles
-- Work on the `main` branch as explicitly requested.
-- Keep permissions minimal and explain every permission.
-- Never expose API keys or secrets in source control.
-- Require user confirmation before consequential actions.
-- Build and test incrementally.
+## Load the extension locally
+1. Open `chrome://extensions` in Chrome.
+2. Enable **Developer mode**.
+3. Select **Load unpacked**.
+4. Choose this repository folder.
 
-## Project status
-Initial repository scaffold. AI provider integration and advanced automation are not configured yet.
+## Project structure
+- `manifest.json` — Chrome Manifest V3 configuration.
+- `popup/` — chat interface.
+- `background/` — service worker and message handling.
+- `docs/ARCHITECTURE.md` — system architecture and security boundaries.
+- `docs/PROJECT_SCOPE.md` — current scope and exclusions.
+
+## Security
+Provider API keys must be kept on a backend, never in extension source code. Browser permissions should be added only when a specific feature requires them.

@@ -1,20 +1,21 @@
 # Project Scope
 
 ## Initial milestone
-Establish a safe, working Manifest V3 browser-extension shell.
+Establish a safe, working Manifest V3 browser-extension shell with a local chat workspace.
 
 ## Included
 - Extension manifest
-- Popup interface
+- Chat popup interface
 - Background service worker
-- Minimal storage permission
-- Basic readiness check
+- Local conversation storage
+- Clear conversation action
+- Initial architecture and security boundaries
 
 ## Not included yet
 - AI provider/API integration
-- Remote or local model selection
-- Browser page reading or interaction
+- Backend hosting or authentication
+- Reading or controlling web pages
 - Desktop-wide control
 - Credential storage or account authentication
 
-These capabilities require explicit requirements, a permission model, and security design before implementation.
+These capabilities require provider, deployment and permission decisions before implementation.
