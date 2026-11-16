@@ -1,6 +1,5 @@
 import contextlib
 import io
-import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,7 +72,7 @@ class GenerationValidationTests(unittest.TestCase):
             self.model.generate(self.prompt.clone(), True)
         with self.assertRaises(ValueError):
             self.model.generate(self.prompt.clone(), -1)
-        for temperature in (0, -1.0, float("nan"), float("inf"), float("-inf")):
+        for temperature in (0, -1.0, float("nan"), float("inf"), float("-inf"), 10**1000):
             with self.subTest(temperature=temperature):
                 with self.assertRaises(ValueError):
                     self.model.generate(self.prompt.clone(), 1, temperature)
