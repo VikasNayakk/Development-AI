@@ -165,8 +165,12 @@ def prepare_dataset(manifest_path: Path, output_dir: Path, *, min_chars: int = 8
         "corpus_sha256": hashlib.sha256(corpus.encode("utf-8")).hexdigest(),
         "corpus_characters": len(corpus),
     }
+    training_file = output_dir / "train.txt"
     if accepted:
-        (output_dir / "train.txt").write_text(corpus, encoding="utf-8", newline="\n")
+        training_file.write_text(corpus, encoding="utf-8", newline="\n")
+    else:
+        # Never leave an older corpus available for an accidental training run.
+        training_file.unlink(missing_ok=True)
     (output_dir / "dataset_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

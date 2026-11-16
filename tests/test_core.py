@@ -19,6 +19,30 @@ class TokenizerTests(unittest.TestCase):
     def test_vocab_is_byte_sized(self):
         self.assertEqual(ByteTokenizer.vocab_size, 256)
 
+    def test_encode_is_deterministic_for_mixed_language_text(self):
+        tokenizer = ByteTokenizer()
+        text = "Hindi: नमस्ते | English: hello | numbers: 123 | symbols: @#$"
+        self.assertEqual(tokenizer.encode(text), tokenizer.encode(text))
+        self.assertEqual(tokenizer.decode(tokenizer.encode(text)), text)
+
+    def test_decode_rejects_boolean_and_non_integer_token_ids(self):
+        tokenizer = ByteTokenizer()
+        with self.assertRaises(TypeError):
+            tokenizer.decode([True])
+        with self.assertRaises(TypeError):
+            tokenizer.decode([65.0])
+
+    def test_decode_rejects_out_of_range_token_ids(self):
+        tokenizer = ByteTokenizer()
+        for token_id in (-1, 256):
+            with self.subTest(token_id=token_id):
+                with self.assertRaises(ValueError):
+                    tokenizer.decode([token_id])
+
+    def test_decode_replaces_invalid_utf8_from_generated_bytes(self):
+        tokenizer = ByteTokenizer()
+        self.assertEqual(tokenizer.decode([0xFF]), "\ufffd")
+
 
 class ConfigTests(unittest.TestCase):
     def test_rejects_invalid_dimensions_and_dropout(self):
