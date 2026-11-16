@@ -10,6 +10,7 @@ import heapq
 import hmac
 import json
 import os
+import re
 import tempfile
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -287,6 +288,7 @@ class ByteLevelBPETokenizer:
             or type(payload["vocab_size"]) is not int
             or not isinstance(payload["merges"], list)
             or not isinstance(payload["sha256"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", payload["sha256"]) is None
         ):
             raise ValueError("Tokenizer artifact metadata is invalid.")
 
