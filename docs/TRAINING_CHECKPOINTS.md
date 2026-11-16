@@ -16,11 +16,25 @@ Resume checkpoints use a separate type marker and format version. They are not i
 python -m core.train \
   --data data/processed/train.txt \
   --steps 1000 \
+  --batch-size 8 \
+  --gradient-accumulation-steps 4 \
   --device cpu \
   --output artifacts/latest.pt
 ```
 
 A resumable checkpoint is saved every 100 steps by default and at the final step. Change this with `--resume-interval` when a different recovery-point interval is required. Checkpoints are written to a temporary file and atomically replaced after serialization.
+
+## Gradient accumulation
+
+- `--batch-size` is the micro-batch size used by each forward/backward pass.
+- `--gradient-accumulation-steps` is the number of micro-batches accumulated before one optimizer update (default: `1`).
+- Effective batch size is `batch_size × gradient_accumulation_steps`. For example, micro-batch 8 with accumulation 4 gives effective batch size 32.
+- Gradients are averaged across the equally sized micro-batches. Gradient clipping is applied once to the combined gradient, immediately before the optimizer update.
+- `--steps`, `--eval-interval` and `--resume-interval` continue to count optimizer updates, not individual micro-batches. One optimizer step consumes `gradient_accumulation_steps` micro-batches.
+- Accumulation lowers activation memory per forward pass, but it does not reduce the memory required by model parameters or optimizer state. It also does not guarantee the exact throughput of a physical large batch.
+- For a reliable comparison, keep optimizer-update count, effective batch size, learning rate, data, model and other settings fixed.
+
+The default accumulation value of 1 preserves the previous single-batch update behavior. Earlier resumable checkpoints that predate the accumulation setting can resume only with accumulation 1. New resume checkpoints store the accumulation count and effective batch size; changing these when resuming is rejected.
 
 ## Resume a run
 
@@ -35,7 +49,7 @@ python -m core.train \
 
 **`--steps` is the total target step count, not the number of additional steps.** The example continues a run saved at step 1,000 through step 2,000.
 
-Keep the same training corpus, seed, batch size, learning rate, block size, validation fraction, evaluation interval, evaluation iterations, device type and CUDA device count. The trainer validates the corpus SHA-256, model configuration and run settings before loading state. A mismatch stops the run rather than silently creating a different experiment.
+Keep the same training corpus, seed, micro-batch size, gradient accumulation steps, learning rate, block size, validation fraction, evaluation interval, evaluation iterations, device type and CUDA device count. The trainer validates the corpus SHA-256, model configuration and run settings before loading state. A mismatch stops the run rather than silently creating a different experiment.
 
 Keep the best inference checkpoint and its paired resume checkpoint together. The trainer checks that both belong to the same corpus and configuration. The resume output path can be changed explicitly with `--resume-output`.
 
