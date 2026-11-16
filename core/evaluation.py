@@ -148,7 +148,7 @@ def load_evaluation_manifest(
                 f"Dataset {dataset_id} is not valid UTF-8."
             ) from error
         # core.train hashes the UTF-8 text after universal newline translation.
-        canonical_text = text.replace("\\r\\n", "\\n").replace("\\r", "\\n")
+        canonical_text = text.replace("\r\n", "\n").replace("\r", "\n")
         training_comparison_sha256 = hashlib.sha256(
             canonical_text.encode("utf-8")
         ).hexdigest()
@@ -162,6 +162,7 @@ def load_evaluation_manifest(
             raise EvaluationManifestError(f"Dataset {dataset_id} contains no documents.")
 
         token_documents = []
+        tokenizer = ByteTokenizer()
         for document_index, document in enumerate(documents):
             flags = privacy_flags(document)
             if flags:
@@ -169,7 +170,7 @@ def load_evaluation_manifest(
                     f"Dataset {dataset_id} document {document_index + 1} failed privacy checks: "
                     + ", ".join(flags)
                 )
-            token_ids = tuple(ByteTokenizer().encode(document))
+            token_ids = tuple(tokenizer.encode(document))
             if len(token_ids) < 2:
                 raise EvaluationManifestError(
                     f"Dataset {dataset_id} document {document_index + 1} must contain at least two UTF-8 bytes."
