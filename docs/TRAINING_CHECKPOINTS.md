@@ -40,11 +40,12 @@ The default accumulation value of 1 preserves the previous single-batch update b
 
 At evaluation intervals, the metrics JSON and training log also record:
 
-- Cumulative supervised target-byte positions processed: optimizer updates × micro-batch size × accumulation steps × block size.
-- Time for the latest optimizer update.
-- Cumulative optimizer-compute time across the run, including previously checkpointed time when resuming.
-- Optimizer-compute tokens per second and timed optimizer updates per second, calculated using matching token/update counters and cumulative optimizer-compute time.
-- The active learning rate.
+- `training_tokens_processed`: total supervised target-byte positions across all completed optimizer updates.
+- `optimizer_update_seconds`: time for the latest optimizer update.
+- `optimizer_compute_seconds`: cumulative optimizer-compute time in the current telemetry window, including previously checkpointed time when resuming.
+- `optimizer_compute_tokens_processed` and `timed_optimizer_updates`: counters that exactly match the cumulative compute-time window.
+- `optimizer_compute_tokens_per_second` and `optimizer_updates_per_second`: throughput derived from the matching counters and cumulative compute time.
+- `learning_rate`: the active learning rate at the reporting step.
 
 CUDA updates are synchronized immediately before and after timing so asynchronous kernels are included. These durations include batch sampling and host-to-device transfer inside the optimizer update, but exclude evaluation, checkpoint serialization and other idle/wall-clock time. Treat them as optimizer-pipeline throughput, not end-to-end job throughput.
 
