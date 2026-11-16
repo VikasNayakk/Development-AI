@@ -278,12 +278,21 @@ def build_resume_checkpoint(
         raise ValueError("steps_completed must be a positive integer.")
     if not math.isfinite(best_validation_loss):
         raise ValueError("best_validation_loss must be finite before saving a resume checkpoint.")
-    optimizer_compute_seconds = _validate_elapsed_seconds(optimizer_compute_seconds)
-    optimizer_compute_tokens_processed = _validate_non_negative_integer(
-        optimizer_compute_tokens_processed, "optimizer compute token count"
-    )
-    timed_optimizer_updates = _validate_non_negative_integer(
-        timed_optimizer_updates, "timed optimizer update count"
+    if not isinstance(settings, dict):
+        raise ValueError("Training settings must be a dictionary.")
+    effective_batch_size = settings.get("effective_batch_size")
+    if type(effective_batch_size) is not int or effective_batch_size <= 0:
+        raise ValueError("Training settings have an invalid effective batch size.")
+    (
+        optimizer_compute_seconds,
+        optimizer_compute_tokens_processed,
+        timed_optimizer_updates,
+    ) = _validate_telemetry_counters(
+        optimizer_compute_seconds=optimizer_compute_seconds,
+        optimizer_compute_tokens_processed=optimizer_compute_tokens_processed,
+        timed_optimizer_updates=timed_optimizer_updates,
+        effective_batch_size=effective_batch_size,
+        block_size=config.block_size,
     )
     return {
         "format_version": RESUME_FORMAT_VERSION,
