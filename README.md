@@ -10,6 +10,7 @@ An independent, local-first AI research project. The long-term objective is to o
 
 ## Current capabilities
 - Byte-level decoder-only Transformer, local training and CPU/CUDA generation.
+- Experimental project-owned byte-level BPE tokenizer and corpus benchmark CLI; not yet connected to model training.
 - Disjoint train/validation evaluation and best-validation checkpointing.
 - Local dataset preparation with explicit rights manifest, provenance hashes, conservative privacy filtering, normalization and exact deduplication.
 
