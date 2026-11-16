@@ -208,9 +208,6 @@ class HeldOutEvaluationManifestTests(unittest.TestCase):
         self.write_manifest([self.entry("private", private)])
         with self.assertRaisesRegex(EvaluationManifestError, "privacy checks"):
             load_evaluation_manifest(self.manifest_path)
-        self.assertNotIn("private-test@example.com", str(
-            self.assertRaises(EvaluationManifestError, load_evaluation_manifest, self.manifest_path)
-        ) if False else "")
 
     def test_rejects_exact_training_corpus_even_when_newline_style_differs(self):
         training_text = "Training corpus first line.\nTraining corpus second line.\n"
