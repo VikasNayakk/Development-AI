@@ -44,6 +44,29 @@ def _validate_non_negative_integer(value, label: str) -> int:
     return value
 
 
+def _validate_telemetry_counters(
+    *,
+    optimizer_compute_seconds,
+    optimizer_compute_tokens_processed,
+    timed_optimizer_updates,
+    effective_batch_size: int,
+    block_size: int,
+) -> tuple[float, int, int]:
+    seconds = _validate_elapsed_seconds(optimizer_compute_seconds)
+    tokens = _validate_non_negative_integer(
+        optimizer_compute_tokens_processed, "optimizer compute token count"
+    )
+    updates = _validate_non_negative_integer(
+        timed_optimizer_updates, "timed optimizer update count"
+    )
+    expected_tokens = updates * effective_batch_size * block_size
+    if tokens != expected_tokens:
+        raise ValueError("Resume checkpoint optimizer telemetry counters do not match.")
+    if (updates == 0 and seconds != 0.0) or (updates > 0 and seconds <= 0.0):
+        raise ValueError("Resume checkpoint optimizer timing and update counters do not match.")
+    return seconds, tokens, updates
+
+
 def split_corpus(data: torch.Tensor, validation_fraction: float, block_size: int):
     if not 0.0 < validation_fraction < 0.5:
         raise ValueError("validation_fraction must be between 0 and 0.5.")
@@ -324,14 +347,14 @@ def validate_resume_checkpoint(
         raise ValueError("Resume checkpoint has an invalid completed-step count.")
     if not isinstance(best_loss, (int, float)) or isinstance(best_loss, bool) or not math.isfinite(best_loss):
         raise ValueError("Resume checkpoint has an invalid best validation loss.")
-    _validate_elapsed_seconds(training.get("optimizer_compute_seconds", 0.0))
-    _validate_non_negative_integer(
-        training.get("optimizer_compute_tokens_processed", 0),
-        "optimizer compute token count",
-    )
-    _validate_non_negative_integer(
-        training.get("timed_optimizer_updates", 0),
-        "timed optimizer update count",
+    _validate_telemetry_counters(
+        optimizer_compute_seconds=training.get("optimizer_compute_seconds", 0.0),
+        optimizer_compute_tokens_processed=training.get(
+            "optimizer_compute_tokens_processed", 0
+        ),
+        timed_optimizer_updates=training.get("timed_optimizer_updates", 0),
+        effective_batch_size=settings["effective_batch_size"],
+        block_size=config.block_size,
     )
     if not isinstance(checkpoint.get("model_state"), dict):
         raise ValueError("Resume checkpoint is missing model weights.")
