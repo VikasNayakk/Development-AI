@@ -43,12 +43,12 @@ At evaluation intervals, the metrics JSON and training log also record:
 - Cumulative supervised target-byte positions processed: optimizer updates × micro-batch size × accumulation steps × block size.
 - Time for the latest optimizer update.
 - Cumulative optimizer-compute time across the run, including previously checkpointed time when resuming.
-- Training tokens per second and optimizer updates per second, calculated from cumulative optimizer-compute time.
+- Optimizer-compute tokens per second and timed optimizer updates per second, calculated using matching token/update counters and cumulative optimizer-compute time.
 - The active learning rate.
 
 CUDA updates are synchronized immediately before and after timing so asynchronous kernels are included. These durations include batch sampling and host-to-device transfer inside the optimizer update, but exclude evaluation, checkpoint serialization and other idle/wall-clock time. Treat them as optimizer-pipeline throughput, not end-to-end job throughput.
 
-Timing values are measurements, not deterministic training state. A resumed run should reproduce its model weights and deterministic metrics, but elapsed times naturally differ from an uninterrupted run. Older resume checkpoints without timing metadata resume with a cumulative optimizer-compute time of zero.
+Timing values are measurements, not deterministic training state. A resumed run should reproduce its model weights and deterministic metrics, but elapsed times naturally differ from an uninterrupted run. Older resume checkpoints without telemetry metadata start a new measurement window at resume. Their pre-existing tokens are not incorrectly divided by only the post-resume time.
 
 ## Resume a run
 
