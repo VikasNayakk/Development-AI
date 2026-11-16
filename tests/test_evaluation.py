@@ -11,7 +11,7 @@ from unittest.mock import patch
 import torch
 
 from core.config import ModelConfig
-from core.evaluate import main as evaluate_main
+from core.evaluate import _create_untrained_baseline, main as evaluate_main
 from core.evaluation import (
     EvaluationManifestError,
     evaluate_manifest,
@@ -302,6 +302,19 @@ class HeldOutEvaluationManifestTests(unittest.TestCase):
 
 
 class EvaluationCliTests(unittest.TestCase):
+    def test_seeded_untrained_baseline_is_reproducible_and_preserves_rng(self):
+        config = ModelConfig(block_size=8, d_model=16, n_heads=2, n_layers=1)
+        torch.manual_seed(999)
+        rng_before = torch.get_rng_state().clone()
+
+        first = _create_untrained_baseline(config, 42, torch.device("cpu"))
+        rng_after = torch.get_rng_state().clone()
+        second = _create_untrained_baseline(config, 42, torch.device("cpu"))
+
+        self.assertTrue(torch.equal(rng_before, rng_after))
+        for name, tensor in first.state_dict().items():
+            self.assertTrue(torch.equal(tensor, second.state_dict()[name]), name)
+
     def test_manifest_cli_writes_machine_readable_metrics(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
