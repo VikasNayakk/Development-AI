@@ -1,9 +1,63 @@
 import json
+from collections import Counter
 import tempfile
 import unittest
 from pathlib import Path
 
 from core.bpe_tokenizer import ByteLevelBPETokenizer
+
+
+def reference_train(documents, max_vocab_size, min_frequency):
+    sequences = [list(text.encode("utf-8")) for text in documents]
+    merges = []
+    while 256 + len(merges) < max_vocab_size:
+        counts = Counter(
+            (sequence[index], sequence[index + 1])
+            for sequence in sequences
+            for index in range(len(sequence) - 1)
+        )
+        if not counts:
+            break
+        pair, frequency = min(counts.items(), key=lambda item: (-item[1], item[0]))
+        if frequency < min_frequency:
+            break
+        updated = []
+        for sequence in sequences:
+            result = []
+            index = 0
+            while index < len(sequence):
+                if (
+                    index + 1 < len(sequence)
+                    and (sequence[index], sequence[index + 1]) == pair
+                ):
+                    result.append(256 + len(merges))
+                    index += 2
+                else:
+                    result.append(sequence[index])
+                    index += 1
+            updated.append(result)
+        sequences = updated
+        merges.append(pair)
+    return tuple(merges)
+
+
+def reference_encode(text, merges):
+    tokens = list(text.encode("utf-8"))
+    for rank, pair in enumerate(merges):
+        result = []
+        index = 0
+        while index < len(tokens):
+            if (
+                index + 1 < len(tokens)
+                and (tokens[index], tokens[index + 1]) == pair
+            ):
+                result.append(256 + rank)
+                index += 2
+            else:
+                result.append(tokens[index])
+                index += 1
+        tokens = result
+    return tokens
 
 
 class ByteLevelBPETokenizerTests(unittest.TestCase):
@@ -20,6 +74,25 @@ class ByteLevelBPETokenizerTests(unittest.TestCase):
         tokenizer = ByteLevelBPETokenizer.train(text * 3, max_vocab_size=300)
 
         self.assertEqual(tokenizer.decode(tokenizer.encode(text)), text)
+
+    def test_trainer_matches_simple_reference_implementation(self):
+        documents = ["abababab xyz " * 3, "xyz xyz नमस्ते " * 2, "aaaaab"]
+        expected = reference_train(documents, 290, 2)
+        actual = ByteLevelBPETokenizer.train(
+            documents, max_vocab_size=290, min_frequency=2
+        )
+        self.assertEqual(actual.merges, expected)
+
+    def test_encoder_matches_sequential_reference_merges(self):
+        documents = ["abracadabra " * 4, "नमस्ते नमस्ते " * 3]
+        tokenizer = ByteLevelBPETokenizer.train(documents, max_vocab_size=290)
+        samples = ["abracadabra", "नमस्ते 🚀", "aaaaab", "unknown symbols!?"]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertEqual(
+                    tokenizer.encode(sample),
+                    reference_encode(sample, tokenizer.merges),
+                )
 
     def test_training_is_deterministic(self):
         documents = ["alpha beta " * 8, "नमस्ते दुनिया " * 5]
@@ -97,8 +170,8 @@ class ByteLevelBPETokenizerTests(unittest.TestCase):
     def test_rejects_tampered_artifact_hash(self):
         tokenizer = ByteLevelBPETokenizer.train("repeat repeat " * 5, max_vocab_size=270)
         payload = tokenizer.to_dict()
-        payload["vocab_size"] += 1
-        with self.assertRaises(ValueError):
+        payload["sha256"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
             ByteLevelBPETokenizer.from_dict(payload)
 
     def test_rejects_artifact_with_invalid_merge_reference(self):
