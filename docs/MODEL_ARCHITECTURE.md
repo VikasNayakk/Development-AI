@@ -88,8 +88,9 @@ Tokenizer compression is a storage/sequence-length metric, not a language-unders
 Before a meaningful long run:
 - Add explicit train/validation/test manifest support with leakage checks.
 - Add gradient accumulation and optional mixed precision only with numerical tests.
-- Add periodic checkpoints, resume-from-checkpoint and optimizer/scheduler state.
-- Save best validation checkpoint separately from latest resumable checkpoint.
+- Completed: resumable checkpoints preserve model, AdamW optimizer, Python/CPU/CUDA RNG state, completed step and best-validation metadata.
+- Completed: best-validation inference checkpoint is kept separate from the latest resumable training checkpoint.
+- Still pending: scheduler state when a learning-rate scheduler is introduced; no scheduler is currently used.
 - Track tokens processed, steps, wall-clock time, learning rate, gradient norm and per-language validation loss.
 - Add early stopping or a documented fixed-budget policy.
 - Make data-loader and sampling behavior deterministic where practical.
@@ -133,10 +134,12 @@ Passing unit tests proves software behavior, not answer quality.
 
 ## Immediate next engineering tasks
 
-1. Add a reproducible model-parameter and configuration report.
-2. Add deterministic sampling controls and stronger generation input validation.
-3. Add resumable checkpoints with optimizer and RNG state, without changing the existing checkpoint reader.
-4. Add a held-out evaluation manifest and per-language metrics.
-5. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
+1. Add deterministic sampling controls and stronger generation input validation.
+2. Add a held-out evaluation manifest and per-language metrics.
+3. Add gradient accumulation and validate its effective-batch behavior.
+4. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
+5. Record training throughput, tokens processed and generation latency on documented hardware.
+
+Completed foundation items include the reproducible model-parameter/configuration report and resumable training checkpoints with optimizer and RNG state.
 
 Each task should be implemented on a feature branch, covered by tests, and reviewed through a pull request. Do not merge an unverified tokenizer migration or commit private prompt data.
