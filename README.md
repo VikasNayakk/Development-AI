@@ -3,14 +3,16 @@
 A browser-extension-first AI assistant project.
 
 ## Current status
-Version 0.3.0: local chat workspace, conversation persistence and a Node.js AI gateway are implemented. A provider API key and model configuration are still required before AI replies can work.
+Version 0.3.1: local chat workspace, conversation persistence and a Node.js AI gateway are implemented. A provider API key, model configuration and extension-origin allowlist are required before AI replies can work.
 
 ## Run the backend
-1. Install Node.js 20 or newer.
+1. Install Node.js 20.6 or newer.
 2. Open a terminal in `backend/`.
 3. Copy `.env.example` to `.env`.
 4. Set `AI_BASE_URL`, `AI_API_KEY` and `AI_MODEL`.
-5. Run `npm start`.
+5. Load the extension in Chrome, open `chrome://extensions`, and copy its extension ID.
+6. Add the exact origin `chrome-extension://YOUR_EXTENSION_ID` to `ALLOWED_EXTENSION_ORIGINS` in `.env`.
+7. Run `npm start` from `backend/`.
 
 The backend defaults to `http://127.0.0.1:8787`.
 
