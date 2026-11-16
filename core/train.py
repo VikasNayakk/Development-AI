@@ -313,7 +313,7 @@ def validate_best_checkpoint(
     training = checkpoint.get("training")
     if not isinstance(training, dict) or training.get("corpus_sha256") != corpus_sha256:
         raise ValueError("Best checkpoint does not match the current training corpus.")
-    if training.get("settings") != settings:
+    if not _training_settings_match(training.get("settings"), settings):
         raise ValueError("Best checkpoint training settings do not match.")
     best_loss = training.get("best_validation_loss")
     if not isinstance(best_loss, (int, float)) or not math.isfinite(best_loss):
@@ -518,6 +518,8 @@ def main():
             record = {
                 "step": step,
                 **metrics,
+                "micro_batch_loss": update_metrics["loss"],
+                "gradient_norm_before_clipping": update_metrics["gradient_norm"],
                 "micro_batch_size": args.batch_size,
                 "gradient_accumulation_steps": args.gradient_accumulation_steps,
                 "effective_batch_size": args.batch_size * args.gradient_accumulation_steps,
@@ -527,6 +529,8 @@ def main():
                 f"step {step}/{args.steps} | "
                 f"train_loss {metrics['train']:.4f} | "
                 f"validation_loss {metrics['validation']:.4f} | "
+                f"micro_batch_loss {update_metrics['loss']:.4f} | "
+                f"gradient_norm {update_metrics['gradient_norm']:.4f} | "
                 f"micro_batch {args.batch_size} x {args.gradient_accumulation_steps} "
                 f"= effective_batch {args.batch_size * args.gradient_accumulation_steps}"
             )
