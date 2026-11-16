@@ -325,6 +325,7 @@ def evaluate_manifest(
     return {
         "format_version": 1,
         "manifest_sha256": manifest_sha256,
+        "training_corpus_hash_available": training_corpus_sha256 is not None,
         "evaluation_protocol": (
             "UTF-8 byte next-token loss; each document is evaluated independently; "
             "non-overlapping input windows of at most model block_size; every next-byte "
@@ -339,6 +340,12 @@ def evaluate_manifest(
         "warning": (
             "Byte-token loss/perplexity measures next-byte prediction only. It does not "
             "measure factuality, instruction following, reasoning or answer quality. "
-            "Exact-duplicate checks do not detect paraphrases or near-duplicates."
+            "Exact-duplicate checks do not detect paraphrases or near-duplicates. "
+            + (
+                "This checkpoint has no training corpus hash, so exact whole-file "
+                "train/evaluation equality could not be checked."
+                if training_corpus_sha256 is None
+                else "The evaluation files were checked against the checkpoint training corpus hash."
+            )
         ),
     }
