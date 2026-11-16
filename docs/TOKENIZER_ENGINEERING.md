@@ -75,11 +75,11 @@ The benchmark trains four tokenizer variants for every requested vocabulary size
 Example:
 
 ~~~bash
-python -m core.benchmark_tokenizer \\
-  --data-hindi data/prompts/hindi.txt \\
-  --data-english data/prompts/english.txt \\
-  --data-hinglish data/prompts/hinglish.txt \\
-  --output-dir artifacts/tokenizer-benchmarks \\
+python -m core.benchmark_tokenizer \
+  --data-hindi data/prompts/hindi.txt \
+  --data-english data/prompts/english.txt \
+  --data-hinglish data/prompts/hinglish.txt \
+  --output-dir artifacts/tokenizer-benchmarks \
   --vocab-sizes 2048 4096 8192
 ~~~
 
