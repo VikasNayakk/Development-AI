@@ -88,7 +88,7 @@ Tokenizer compression is a storage/sequence-length metric, not a language-unders
 
 Before a meaningful long run:
 - Add explicit train/validation/test manifest support with leakage checks.
-- Add gradient accumulation and optional mixed precision only with numerical tests.
+- Completed: add micro-batch gradient accumulation, average gradients across micro-batches, clip once per optimizer update, and preserve optimizer-step semantics; numerical parity tests are included. Mixed precision remains pending and requires separate numerical tests.
 - Completed: resumable checkpoints preserve model, AdamW optimizer, Python/CPU/CUDA RNG state, completed step and best-validation metadata.
 - Completed: best-validation inference checkpoint is kept separate from the latest resumable training checkpoint.
 - Still pending: scheduler state when a learning-rate scheduler is introduced; no scheduler is currently used.
@@ -135,10 +135,10 @@ Passing unit tests proves software behavior, not answer quality.
 
 ## Immediate next engineering tasks
 
-1. Add gradient accumulation and validate its effective-batch behavior.
-2. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
-3. Record training throughput, tokens processed and generation latency on documented hardware.
+1. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
+2. Record training throughput, tokens processed and generation latency on documented hardware.
+3. Add mixed precision only after numerical stability and resume behavior have separate tests.
 
-Completed foundation items include the reproducible model-parameter/configuration report, resumable training checkpoints with optimizer and RNG state, generation input validation with deterministic decoding controls, and held-out per-language validation/test evaluation.
+Completed foundation items include the reproducible model-parameter/configuration report, resumable training checkpoints with optimizer and RNG state, generation input validation with deterministic decoding controls, held-out per-language validation/test evaluation, and tested gradient accumulation with effective-batch reporting.
 
 Each task should be implemented on a feature branch, covered by tests, and reviewed through a pull request. Do not merge an unverified tokenizer migration or commit private prompt data.
