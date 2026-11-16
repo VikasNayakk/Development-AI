@@ -31,6 +31,14 @@ Current default configuration:
 
 With the current default dimensions and tied token/output embeddings, the model has approximately 842,496 trainable parameters. This is a small experimental language model, not a production assistant.
 
+Run the parameter/configuration report at any time:
+
+```bash
+python -m core.model_info --json
+```
+
+The report instantiates the current architecture, counts unique parameters (so the tied output embedding is counted once), and gives a component breakdown plus FP32/FP16-or-BF16 parameter-storage estimates. Those estimates cover parameter tensors only; they do not include gradients, optimizer state, activations or runtime workspaces. The report describes the randomly initialized architecture and does not claim that a trained checkpoint is capable.
+
 The experimental `utf8-byte-bpe-v1` tokenizer is deliberately not wired into model training. The production vocabulary size and checkpoint format remain unchanged until the multilingual benchmark and a versioned migration are reviewed.
 
 ## Design principles
