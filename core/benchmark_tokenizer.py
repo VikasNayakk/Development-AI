@@ -1,5 +1,6 @@
 """Train and benchmark experimental byte-level BPE vocabularies."""
 import argparse
+import hashlib
 import json
 import os
 import tempfile
@@ -38,19 +39,25 @@ def main():
     if not corpus_path.is_file():
         parser.error(f"Corpus file not found: {corpus_path}")
     try:
-        text = corpus_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        parser.error(f"Cannot read UTF-8 corpus: {error}")
+        with corpus_path.open("rb") as handle:
+            raw_corpus = handle.read(args.max_training_bytes + 1)
+    except OSError as error:
+        parser.error(f"Cannot read corpus: {error}")
 
-    corpus_bytes = len(text.encode("utf-8"))
-    if corpus_bytes == 0:
-        parser.error("Corpus must not be empty")
+    corpus_bytes = len(raw_corpus)
     if corpus_bytes > args.max_training_bytes:
         parser.error(
-            f"Corpus is {corpus_bytes} bytes; the experimental in-memory trainer "
-            f"limit is {args.max_training_bytes}. Use a reviewed representative sample "
-            "or explicitly raise --max-training-bytes after checking available memory."
+            f"Corpus exceeds the {args.max_training_bytes}-byte experimental in-memory "
+            "trainer limit. Use a reviewed representative sample or explicitly raise "
+            "--max-training-bytes after checking available memory."
         )
+    if corpus_bytes == 0:
+        parser.error("Corpus must not be empty")
+    try:
+        text = raw_corpus.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        parser.error(f"Corpus is not valid UTF-8: {error}")
+    corpus_sha256 = hashlib.sha256(raw_corpus).hexdigest()
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -108,6 +115,7 @@ def main():
         "experiment": "utf8-byte-bpe-v1",
         "corpus_file": str(corpus_path),
         "corpus_utf8_bytes": corpus_bytes,
+        "corpus_sha256": corpus_sha256,
         "note": (
             "Experimental results on this corpus only. Token reduction is not a "
             "quality metric; tokenizer/model quality and downstream training must "
