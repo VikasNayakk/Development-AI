@@ -374,7 +374,20 @@ class EvaluationCliTests(unittest.TestCase):
             self.assertEqual(
                 len(evaluation["baseline_comparison"]["language_split_metrics"]), 1
             )
+
+            default_stdout = io.StringIO()
+            default_argv = [
+                "core.evaluate",
+                "--checkpoint", str(checkpoint_path),
+                "--manifest", str(manifest_path),
+                "--device", "cpu",
+            ]
+            with patch("sys.argv", default_argv), contextlib.redirect_stdout(default_stdout):
+                evaluate_main()
+            default_result = json.loads(default_stdout.getvalue())
+            self.assertNotIn("baseline_comparison", default_result["evaluation"])
             self.assertNotIn("private local input", stdout.getvalue())
+            self.assertNotIn("private local input", default_stdout.getvalue())
 
     def test_cli_requires_manifest_for_untrained_comparison(self):
         with patch("sys.argv", [
