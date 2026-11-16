@@ -20,7 +20,7 @@ def main():
     )
     parser.add_argument("--min-frequency", type=int, default=2)
     parser.add_argument(
-        "--max-training-bytes", type=int, default=250000,
+        "--max-training-bytes", type=int, default=50000,
         help="Safety limit for this in-memory experimental trainer",
     )
     args = parser.parse_args()
