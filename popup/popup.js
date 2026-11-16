@@ -17,7 +17,6 @@ function setConnection(online, text) {
 function render(messages) {
   messagesElement.replaceChildren();
   welcome.hidden = messages.length > 0;
-
   for (const message of messages) {
     const item = document.createElement("div");
     item.className = `message ${message.role === "user" ? "user" : "notice"}`;
@@ -34,13 +33,18 @@ async function loadMessages() {
 
 async function checkBackend() {
   try {
-    const response = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+    const response = await fetch(`${API_BASE}/v1/status`, { cache: "no-store" });
     if (!response.ok) throw new Error("Backend unavailable");
-    const health = await response.json();
-    setConnection(
-      health.aiConfigured,
-      health.aiConfigured ? "AI backend connected" : "Backend online · AI not configured"
-    );
+    const status = await response.json();
+    if (status.provider === "ollama" && !status.available) {
+      setConnection(false, "Ollama is not running");
+    } else if (status.provider === "ollama" && !status.modelInstalled) {
+      setConnection(false, `Ollama online · install ${status.model}`);
+    } else {
+      setConnection(Boolean(status.available ?? status.configured), status.modelInstalled === false
+        ? "AI model not installed"
+        : `Local AI ready · ${status.model}`);
+    }
   } catch {
     setConnection(false, "AI backend offline · start backend locally");
   }
@@ -54,10 +58,7 @@ composer.addEventListener("submit", async (event) => {
   sendButton.disabled = true;
   input.disabled = true;
   try {
-    const stored = await chrome.runtime.sendMessage({
-      type: "SAVE_USER_MESSAGE",
-      content
-    });
+    const stored = await chrome.runtime.sendMessage({ type: "SAVE_USER_MESSAGE", content });
     if (!stored?.ok) throw new Error(stored?.error || "Could not save message.");
     render(stored.conversation);
     input.value = "";
@@ -73,10 +74,7 @@ composer.addEventListener("submit", async (event) => {
       body: JSON.stringify({ messages: history })
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = result?.error?.message || "AI request failed.";
-      throw new Error(error);
-    }
+    if (!response.ok) throw new Error(result?.error?.message || "AI request failed.");
 
     const savedReply = await chrome.runtime.sendMessage({
       type: "SAVE_ASSISTANT_MESSAGE",
@@ -84,14 +82,14 @@ composer.addEventListener("submit", async (event) => {
     });
     if (!savedReply?.ok) throw new Error("AI replied, but the reply could not be saved.");
     render(savedReply.conversation);
-    setConnection(true, "AI backend connected");
+    setConnection(true, "Local AI connected");
   } catch (error) {
     const notice = await chrome.runtime.sendMessage({
       type: "SAVE_NOTICE",
-      content: error.message || "Could not reach the AI backend."
+      content: error.message || "Could not reach local AI."
     });
     if (notice?.ok) render(notice.conversation);
-    setConnection(false, "AI request failed");
+    setConnection(false, error.message || "Local AI request failed");
   } finally {
     sendButton.disabled = false;
     input.disabled = false;

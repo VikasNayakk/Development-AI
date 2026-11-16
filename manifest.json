@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Development AI",
-  "version": "0.3.1",
-  "description": "An AI-assisted browser workflow extension.",
+  "version": "0.4.0",
+  "description": "An AI-assisted browser workflow extension powered by local AI.",
   "action": {
     "default_title": "Development AI",
     "default_popup": "popup/popup.html"

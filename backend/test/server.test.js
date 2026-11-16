@@ -34,16 +34,19 @@ before(async () => {
   backendPort = await unusedPort();
 
   provider = http.createServer(async (request, response) => {
-    let body = "";
-    for await (const chunk of request) body += chunk;
-    const payload = JSON.parse(body || "{}");
-    if (request.headers.authorization !== "Bearer test-secret") {
-      response.writeHead(401).end("{}");
+    if (request.url === "/api/tags") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ models: [{ name: "qwen2.5:7b" }] }));
       return;
     }
+    let raw = "";
+    for await (const chunk of request) raw += chunk;
+    const payload = JSON.parse(raw || "{}");
+    assert.equal(request.url, "/api/chat");
+    assert.equal(payload.stream, false);
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({
-      choices: [{ message: { role: "assistant", content: `Mock reply: ${payload.messages.at(-1).content}` } }]
+      message: { role: "assistant", content: `Local mock reply: ${payload.messages.at(-1).content}` }
     }));
   });
   await new Promise((resolve) => provider.listen(providerPort, "127.0.0.1", resolve));
@@ -54,9 +57,9 @@ before(async () => {
       ...process.env,
       HOST: "127.0.0.1",
       PORT: String(backendPort),
-      AI_BASE_URL: `http://127.0.0.1:${providerPort}/v1`,
-      AI_API_KEY: "test-secret",
-      AI_MODEL: "mock-model",
+      AI_PROVIDER: "ollama",
+      AI_MODEL: "qwen2.5:7b",
+      OLLAMA_BASE_URL: `http://127.0.0.1:${providerPort}`,
       ALLOWED_EXTENSION_ORIGINS: ORIGIN
     },
     stdio: "ignore"
@@ -69,15 +72,24 @@ after(async () => {
   if (provider) await new Promise((resolve) => provider.close(resolve));
 });
 
-test("health endpoint reports configured backend", async () => {
+test("health endpoint reports local Ollama provider", async () => {
   const response = await fetch(`http://127.0.0.1:${backendPort}/health`);
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.equal(body.status, "ok");
+  assert.equal(body.provider, "ollama");
   assert.equal(body.aiConfigured, true);
 });
 
-test("chat endpoint calls provider and returns assistant message", async () => {
+test("status endpoint detects installed local model", async () => {
+  const response = await fetch(`http://127.0.0.1:${backendPort}/v1/status`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.available, true);
+  assert.equal(body.modelInstalled, true);
+  assert.deepEqual(body.installedModels, ["qwen2.5:7b"]);
+});
+
+test("chat endpoint calls Ollama API and returns assistant message", async () => {
   const response = await fetch(`http://127.0.0.1:${backendPort}/v1/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: ORIGIN },
@@ -85,7 +97,7 @@ test("chat endpoint calls provider and returns assistant message", async () => {
   });
   const body = await response.json();
   assert.equal(response.status, 200);
-  assert.deepEqual(body.message, { role: "assistant", content: "Mock reply: Hello" });
+  assert.deepEqual(body.message, { role: "assistant", content: "Local mock reply: Hello" });
   assert.equal(response.headers.get("access-control-allow-origin"), ORIGIN);
 });
 
