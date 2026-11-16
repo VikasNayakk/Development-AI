@@ -1,10 +1,14 @@
 import json
+import contextlib
+import io
 from collections import Counter
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from core.bpe_tokenizer import ByteLevelBPETokenizer
+from core.benchmark_tokenizer import main as benchmark_main
 
 
 def reference_train(documents, max_vocab_size, min_frequency):
@@ -196,6 +200,43 @@ class ByteLevelBPETokenizerTests(unittest.TestCase):
         tokenizer = ByteLevelBPETokenizer.train("deterministic data " * 5, max_vocab_size=270)
         encoded = json.dumps(tokenizer.to_dict(), sort_keys=True)
         self.assertEqual(encoded, json.dumps(tokenizer.to_dict(), sort_keys=True))
+
+    def test_benchmark_cli_writes_artifact_and_hashed_report(self):
+        text = "benchmark data नमस्ते " * 5
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            corpus = root / "corpus.txt"
+            output = root / "results"
+            corpus.write_text(text, encoding="utf-8")
+            arguments = [
+                "benchmark_tokenizer",
+                "--data", str(corpus),
+                "--output-dir", str(output),
+                "--vocab-sizes", "270",
+            ]
+            with patch("sys.argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+                benchmark_main()
+
+            report = json.loads((output / "benchmark-report.json").read_text(encoding="utf-8"))
+            self.assertEqual(report["corpus_utf8_bytes"], len(text.encode("utf-8")))
+            self.assertEqual(len(report["corpus_sha256"]), 64)
+            self.assertTrue((output / "byte-bpe-target-270.json").is_file())
+            self.assertEqual(report["results"][0]["actual_vocab_size"], 270)
+
+    def test_benchmark_cli_rejects_oversized_corpus_before_full_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            corpus = root / "large.txt"
+            corpus.write_bytes(b"x" * 100)
+            arguments = [
+                "benchmark_tokenizer",
+                "--data", str(corpus),
+                "--output-dir", str(root / "results"),
+                "--vocab-sizes", "256",
+                "--max-training-bytes", "10",
+            ]
+            with patch("sys.argv", arguments), self.assertRaises(SystemExit):
+                benchmark_main()
 
 
 if __name__ == "__main__":
