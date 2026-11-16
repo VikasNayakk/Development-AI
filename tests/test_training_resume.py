@@ -112,8 +112,41 @@ class TrainingResumeTests(unittest.TestCase):
                 [entry["step"] for entry in resumed["history"]],
                 [1, 2, 4],
             )
-            self.assertEqual(resumed["history"], uninterrupted["history"])
-            self.assertEqual(resumed["training"], uninterrupted["training"])
+            telemetry_fields = {
+                "optimizer_update_seconds",
+                "optimizer_compute_seconds",
+                "training_tokens_per_second",
+                "optimizer_updates_per_second",
+            }
+            deterministic_resumed_history = [
+                {key: value for key, value in record.items() if key not in telemetry_fields}
+                for record in resumed["history"]
+            ]
+            deterministic_full_history = [
+                {key: value for key, value in record.items() if key not in telemetry_fields}
+                for record in uninterrupted["history"]
+            ]
+            self.assertEqual(deterministic_resumed_history, deterministic_full_history)
+            resumed_training = {
+                key: value for key, value in resumed["training"].items()
+                if key != "optimizer_compute_seconds"
+            }
+            full_training = {
+                key: value for key, value in uninterrupted["training"].items()
+                if key != "optimizer_compute_seconds"
+            }
+            self.assertEqual(resumed_training, full_training)
+            self.assertGreater(resumed["training"]["optimizer_compute_seconds"], 0.0)
+            for record in resumed["history"]:
+                self.assertGreater(record["optimizer_update_seconds"], 0.0)
+                self.assertGreater(record["optimizer_compute_seconds"], 0.0)
+                self.assertGreater(record["training_tokens_per_second"], 0.0)
+                self.assertGreater(record["optimizer_updates_per_second"], 0.0)
+                self.assertEqual(
+                    record["training_tokens_processed"],
+                    record["step"] * 2 * 2 * 8,
+                )
+                self.assertEqual(record["learning_rate"], 0.001)
 
             for name, tensor in uninterrupted["model_state"].items():
                 self.assertTrue(
