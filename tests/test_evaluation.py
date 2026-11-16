@@ -1,12 +1,16 @@
+import contextlib
 import hashlib
+import io
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import torch
 
 from core.config import ModelConfig
+from core.evaluate import main as evaluate_main
 from core.evaluation import (
     EvaluationManifestError,
     evaluate_manifest,
@@ -237,6 +241,71 @@ class HeldOutEvaluationManifestTests(unittest.TestCase):
                 self.manifest_path,
                 training_corpus_sha256="not-a-sha256",
             )
+
+
+
+class EvaluationCliTests(unittest.TestCase):
+    def test_manifest_cli_writes_machine_readable_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint_path = root / "model.pt"
+            manifest_path = root / "evaluation.json"
+            source_path = root / "english_validation.txt"
+            model = DevelopmentAIModel(
+                ModelConfig(block_size=8, d_model=16, n_heads=2, n_layers=1)
+            )
+            torch.save({
+                "format_version": 1,
+                "model_name": "Development-AI",
+                "tokenizer": "utf8-byte-v1",
+                "config": model.config.to_dict(),
+                "model_state": model.state_dict(),
+                "training": {
+                    "corpus_sha256": hashlib.sha256(b"separate training data").hexdigest()
+                },
+            }, checkpoint_path)
+            source_path.write_text(
+                "This independent English evaluation sentence is private local input.",
+                encoding="utf-8",
+            )
+            manifest_path.write_text(json.dumps({
+                "format_version": 1,
+                "datasets": [{
+                    "dataset_id": "english-validation",
+                    "path": source_path.name,
+                    "language": "english",
+                    "split": "validation",
+                    "rights_confirmed": True,
+                }],
+            }), encoding="utf-8")
+
+            stdout = io.StringIO()
+            argv = [
+                "core.evaluate",
+                "--checkpoint", str(checkpoint_path),
+                "--manifest", str(manifest_path),
+                "--device", "cpu",
+            ]
+            with patch("sys.argv", argv), contextlib.redirect_stdout(stdout):
+                evaluate_main()
+
+            result = json.loads(stdout.getvalue())
+            evaluation = result["evaluation"]
+            self.assertEqual(result["model"], "Development-AI")
+            self.assertTrue(evaluation["training_corpus_hash_available"])
+            self.assertEqual(len(evaluation["datasets"]), 1)
+            self.assertEqual(evaluation["datasets"][0]["language"], "english")
+            self.assertNotIn("private local input", stdout.getvalue())
+
+    def test_cli_rejects_manifest_and_legacy_data_together(self):
+        with patch("sys.argv", [
+            "core.evaluate",
+            "--manifest", "unused.json",
+            "--data", "unused.txt",
+        ]):
+            with self.assertRaises(SystemExit) as raised:
+                evaluate_main()
+        self.assertEqual(raised.exception.code, 2)
 
 
 class DeterministicScoringTests(unittest.TestCase):
