@@ -65,7 +65,8 @@ Before training on real user-facing material:
 - Build a rights-cleared corpus from sources whose licenses and permissions are explicitly confirmed.
 - Keep raw sources local/private; commit only schemas, tests and synthetic fixtures.
 - Maintain separate train, validation and test sets. The test set must not be used for training or tuning.
-- Measure per-language coverage and report Hindi, English and Hinglish separately.
+- Completed: local evaluation manifests validate rights, language/split labels, safe file paths, UTF-8, privacy patterns, exact duplicate documents and training-corpus whole-file fingerprints when available.
+- Completed: deterministic byte-level next-token evaluation reports separate token-weighted metrics for Hindi, English and Hinglish validation/test groups; missing language/split groups are made explicit.
 - Add task-specific evaluation sets for next-token modeling, prompt continuation, instruction response format, factual recall and refusal/safety behavior.
 - Record corpus hashes and source identifiers without exposing private text.
 - Manually review privacy-filter output; heuristic filters are not a guarantee that all personal data has been removed.
@@ -134,11 +135,10 @@ Passing unit tests proves software behavior, not answer quality.
 
 ## Immediate next engineering tasks
 
-1. Add a held-out evaluation manifest and per-language metrics.
-2. Add gradient accumulation and validate its effective-batch behavior.
-3. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
-4. Record training throughput, tokens processed and generation latency on documented hardware.
+1. Add gradient accumulation and validate its effective-batch behavior.
+2. Run the multilingual tokenizer benchmark on representative private data when the user supplies the completed corpus template.
+3. Record training throughput, tokens processed and generation latency on documented hardware.
 
-Completed foundation items include the reproducible model-parameter/configuration report, resumable training checkpoints with optimizer and RNG state, and generation input validation with deterministic decoding controls.
+Completed foundation items include the reproducible model-parameter/configuration report, resumable training checkpoints with optimizer and RNG state, generation input validation with deterministic decoding controls, and held-out per-language validation/test evaluation.
 
 Each task should be implemented on a feature branch, covered by tests, and reviewed through a pull request. Do not merge an unverified tokenizer migration or commit private prompt data.
