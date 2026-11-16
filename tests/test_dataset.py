@@ -94,10 +94,17 @@ class DatasetPreparationTests(unittest.TestCase):
         self.assertEqual(report["rejected_sources"][0]["reason"], "duplicate_normalized_content")
 
     def test_empty_valid_set_does_not_write_training_file(self):
+        self.output.mkdir(parents=True)
+        stale_corpus = self.output / "train.txt"
+        stale_corpus.write_text("OLD TRAINING DATA", encoding="utf-8")
         self.write_manifest([self.source("short", "raw/a.txt", "Too short.")])
-        with self.assertRaises(DatasetError):
-            prepare_dataset(self.manifest, self.output, min_chars=80)
-        self.assertFalse((self.output / "train.txt").exists())
+
+        report = prepare_dataset(self.manifest, self.output, min_chars=80)
+
+        self.assertEqual(report["accepted_count"], 0)
+        self.assertEqual(report["rejected_count"], 1)
+        self.assertTrue((self.output / "dataset_report.json").is_file())
+        self.assertFalse(stale_corpus.exists())
 
 
 if __name__ == "__main__":
