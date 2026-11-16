@@ -90,7 +90,13 @@ def run_benchmark(
     supervised_tokens = (
         measured_steps * batch_size * gradient_accumulation_steps * config.block_size
     )
+    if total_seconds <= 0.0:
+        raise RuntimeError("Measured training duration was not positive.")
     average_update_seconds = total_seconds / measured_steps
+    peak_memory_bytes = (
+        int(torch.cuda.max_memory_allocated(device))
+        if device.type == "cuda" else None
+    )
 
     prompt_length = min(config.block_size, 32)
     prompt = torch.randint(0, config.vocab_size, (1, prompt_length), device=device)
@@ -107,10 +113,6 @@ def run_benchmark(
     model.train(was_training)
 
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
-    peak_memory_bytes = (
-        int(torch.cuda.max_memory_allocated(device))
-        if device.type == "cuda" else None
-    )
     device_name = (
         torch.cuda.get_device_name(device)
         if device.type == "cuda" else platform.processor() or platform.machine()
