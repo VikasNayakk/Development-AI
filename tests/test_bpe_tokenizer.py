@@ -178,6 +178,12 @@ class ByteLevelBPETokenizerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SHA-256"):
             ByteLevelBPETokenizer.from_dict(payload)
 
+    def test_rejects_non_hex_artifact_digest(self):
+        payload = ByteLevelBPETokenizer().to_dict()
+        payload["sha256"] = "é" * 64
+        with self.assertRaisesRegex(ValueError, "metadata"):
+            ByteLevelBPETokenizer.from_dict(payload)
+
     def test_rejects_artifact_with_invalid_merge_reference(self):
         payload = {
             "format_version": 1,
