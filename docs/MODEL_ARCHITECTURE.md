@@ -96,7 +96,6 @@ Before a meaningful long run:
 - Completed: record optimizer-update duration, cumulative optimizer-compute time, supervised target positions, derived training throughput and active learning rate; CUDA timing includes explicit synchronization. This excludes evaluation/checkpoint time and is not end-to-end job wall time.
 - Completed: per-language validation/test losses are reported by the separate held-out evaluation manifest path.
 - Still pending: early stopping or a documented fixed-budget policy.
-- Add early stopping or a documented fixed-budget policy.
 - Make data-loader and sampling behavior deterministic where practical.
 - Test corrupted, incompatible and incomplete checkpoints.
 
