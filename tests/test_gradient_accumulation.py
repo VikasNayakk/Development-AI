@@ -51,9 +51,32 @@ class GradientAccumulationTests(unittest.TestCase):
         reference_grad_norm = torch.nn.utils.clip_grad_norm_(
             reference_model.parameters(), max_norm=0.05, error_if_nonfinite=True
         )
+        reference_gradients = {
+            name: parameter.grad.detach().clone()
+            for name, parameter in reference_model.named_parameters()
+            if parameter.grad is not None
+        }
         reference_optimizer.step()
 
-        with patch("core.train.get_batch", side_effect=self.micro_batches) as get_batch:
+        captured_gradients = {}
+        original_step = accumulated_optimizer.step
+
+        def capture_gradients_then_step(*args, **kwargs):
+            captured_gradients.update({
+                name: parameter.grad.detach().clone()
+                for name, parameter in accumulated_model.named_parameters()
+                if parameter.grad is not None
+            })
+            return original_step(*args, **kwargs)
+
+        with (
+            patch("core.train.get_batch", side_effect=self.micro_batches) as get_batch,
+            patch.object(
+                accumulated_optimizer,
+                "step",
+                side_effect=capture_gradients_then_step,
+            ) as optimizer_step,
+        ):
             result = optimizer_update(
                 accumulated_model,
                 accumulated_optimizer,
@@ -66,20 +89,25 @@ class GradientAccumulationTests(unittest.TestCase):
             )
 
         self.assertEqual(get_batch.call_count, 2)
+        self.assertEqual(optimizer_step.call_count, 1)
         self.assertEqual(result["micro_batches"], 2)
         self.assertEqual(result["effective_batch_size"], 4)
         self.assertAlmostEqual(result["loss"], float(reference_loss.item()), places=6)
         self.assertAlmostEqual(
             result["gradient_norm"], float(reference_grad_norm.item()), places=5
         )
-        for (name, expected), (_, actual) in zip(
-            reference_model.named_parameters(),
-            accumulated_model.named_parameters(),
-        ):
+        self.assertEqual(set(captured_gradients), set(reference_gradients))
+        for name, expected in reference_gradients.items():
+            actual = captured_gradients[name]
             self.assertTrue(
-                torch.allclose(expected, actual, rtol=1e-6, atol=1e-8),
-                f"Accumulated update differs from full-batch update for {name}",
+                torch.allclose(expected, actual, rtol=1e-4, atol=2e-7),
+                f"Accumulated pre-step gradient differs from effective-batch gradient for {name}; "
+                f"max_abs_error={(expected - actual).abs().max().item():.3e}",
             )
+        self.assertTrue(all(
+            state["step"].item() == 1
+            for state in accumulated_optimizer.state.values()
+        ))
 
     def test_one_micro_batch_matches_a_standard_optimizer_update(self):
         reference_model = copy.deepcopy(self.model)
