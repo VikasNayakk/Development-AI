@@ -12,6 +12,15 @@ from core.train import _training_settings_match, main as train_main
 
 
 class TrainingResumeTests(unittest.TestCase):
+    def test_training_cli_rejects_zero_gradient_accumulation(self):
+        with patch("sys.argv", [
+            "core.train",
+            "--gradient-accumulation-steps", "0",
+        ]):
+            with self.assertRaises(SystemExit) as raised:
+                train_main()
+        self.assertEqual(raised.exception.code, 2)
+
     def test_legacy_resume_settings_are_compatible_only_with_accumulation_one(self):
         legacy = {
             "seed": 42,
