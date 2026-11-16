@@ -57,7 +57,13 @@ This reports the active model configuration, unique parameter count, component b
 python -m core.train --data data/processed/train.txt --steps 1000 --device cpu
 python -m core.evaluate --checkpoint artifacts/latest.pt --data data/processed/train.txt --device cpu
 python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-new-tokens 120 --device cpu
+# Deterministic greedy decoding:
+python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-new-tokens 120 --device cpu --greedy
+# Reproducible sampled decoding (same seed, model and device):
+python -m core.generate --checkpoint artifacts/latest.pt --prompt "Hello" --max-new-tokens 120 --device cpu --seed 42
 ```
+
+Generation validates prompt token IDs and sampling settings. Sampling remains the default; `--greedy` selects deterministic argmax decoding.
 
 Training saves a best-validation inference checkpoint plus a separate resumable checkpoint (including optimizer and RNG state). To continue an interrupted run, increase the total `--steps` target and pass `--resume-from artifacts/latest.resume.pt`. Keep the corpus and training settings unchanged. See [docs/TRAINING_CHECKPOINTS.md](docs/TRAINING_CHECKPOINTS.md) for details.
 
