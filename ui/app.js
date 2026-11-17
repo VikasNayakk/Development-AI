@@ -375,6 +375,8 @@
       eval_interval: Number($("#train-eval-interval").value),
       eval_iters: Number($("#train-eval-iters").value),
       validation_fraction: Number($("#train-validation").value),
+      early_stopping_patience: Number($("#train-early-stopping-patience").value),
+      early_stopping_min_delta: Number($("#train-early-stopping-min-delta").value),
       device: $("#train-device").value,
       resume: $("#resume-training").checked
     };

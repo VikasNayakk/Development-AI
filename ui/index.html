@@ -38,6 +38,13 @@
         </div>
       </header>
 
+      <nav class="mobile-nav" aria-label="Main navigation">
+        <button class="nav-item mobile-nav-item active" data-view="overview" aria-label="Overview"><span class="nav-icon">◫</span><span>Overview</span></button>
+        <button class="nav-item mobile-nav-item" data-view="playground" aria-label="Playground"><span class="nav-icon">✳</span><span>Playground</span></button>
+        <button class="nav-item mobile-nav-item" data-view="training" aria-label="Training"><span class="nav-icon">⌁</span><span>Training</span></button>
+        <button class="nav-item mobile-nav-item" data-view="evaluation" aria-label="Evaluation"><span class="nav-icon">▤</span><span>Evaluation</span></button>
+      </nav>
+
       <div class="content">
         <section class="view active" id="view-overview">
           <div class="page-heading">
@@ -140,6 +147,12 @@
                 <div><label class="field-label" for="train-validation">Validation fraction</label><input id="train-validation" class="text-input" type="number" min="0.001" max="0.499" step="0.001" value="0.1" required></div>
                 <div><label class="field-label" for="train-device">Compute device</label><select id="train-device" class="text-input"><option value="cpu">CPU</option><option value="cuda">CUDA</option></select></div>
               </div>
+              <div class="form-section-title">Validation controls</div>
+              <div class="form-grid">
+                <div><label class="field-label" for="train-early-stopping-patience">Early stopping patience</label><input id="train-early-stopping-patience" class="text-input" type="number" min="0" max="10000" step="1" value="0" required></div>
+                <div><label class="field-label" for="train-early-stopping-min-delta">Minimum loss improvement</label><input id="train-early-stopping-min-delta" class="text-input" type="number" min="0" max="1" step="any" value="0" required></div>
+              </div>
+              <p class="control-note">Patience 0 disables early stopping. Otherwise training stops after the configured number of consecutive evaluation checks without the minimum validation-loss improvement.</p>
               <label class="check-row resume-row"><input id="resume-training" type="checkbox"><span><strong>Resume previous run</strong><small>Continue from latest.resume.pt with the same corpus and settings.</small></span></label>
               <div class="form-actions"><span>Checkpoint output: <code>artifacts/latest.pt</code></span><button id="start-training-button" class="primary-button" type="submit">Start training <span>↗</span></button></div>
             </form>
