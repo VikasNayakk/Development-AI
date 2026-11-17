@@ -13,7 +13,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 
 class RiskLevel(str, Enum):
@@ -425,11 +425,18 @@ class ToolAdapter(Protocol):
 class ToolRegistry:
     """Explicit registry; tools are added by trusted host code, never model output."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        approval_consumer: Callable[[ApprovalGrant], bool] | None = None,
+    ) -> None:
+        if approval_consumer is not None and not callable(approval_consumer):
+            raise ValueError("approval_consumer must be callable or None.")
         self._adapters: dict[str, ToolAdapter] = {}
         self._manifests: dict[str, ToolManifest] = {}
         self._approval_lock = threading.Lock()
         self._consumed_approval_ids: set[str] = set()
+        self._approval_consumer = approval_consumer
 
     def register(self, adapter: ToolAdapter) -> None:
         manifest = getattr(adapter, "manifest", None)
@@ -450,12 +457,23 @@ class ToolRegistry:
     def manifests(self) -> tuple[ToolManifest, ...]:
         return tuple(self._manifests[key] for key in sorted(self._manifests))
 
-    def consume_approval(self, approval_id: str) -> bool:
-        """Atomically consume an approval ID once within this registry process."""
+    @property
+    def uses_external_approval_consumer(self) -> bool:
+        return self._approval_consumer is not None
+
+    def consume_approval(self, approval: ApprovalGrant) -> bool:
+        """Atomically consume a grant, using durable host storage when configured."""
+        if not isinstance(approval, ApprovalGrant):
+            return False
+        if self._approval_consumer is not None:
+            consumed = self._approval_consumer(approval)
+            if type(consumed) is not bool:
+                raise TypeError("approval_consumer must return a boolean.")
+            return consumed
         with self._approval_lock:
-            if approval_id in self._consumed_approval_ids:
+            if approval.approval_id in self._consumed_approval_ids:
                 return False
-            self._consumed_approval_ids.add(approval_id)
+            self._consumed_approval_ids.add(approval.approval_id)
             return True
 
 
@@ -544,8 +562,18 @@ class ToolDispatcher:
                 return self._denied("approval_scope_mismatch")
             if approval.expires_at_unix <= wall_clock():
                 return self._denied("approval_expired")
-            if not self._registry.consume_approval(approval.approval_id):
-                return self._denied("approval_reused")
+            try:
+                consumed = self._registry.consume_approval(approval)
+            except Exception:
+                # Storage failures must fail closed and must not expose internals.
+                return self._denied("approval_store_unavailable")
+            if not consumed:
+                code = (
+                    "approval_unavailable"
+                    if self._registry.uses_external_approval_consumer
+                    else "approval_reused"
+                )
+                return self._denied(code)
 
         cancel_event = cancel_event or threading.Event()
         if cancel_event.is_set():
