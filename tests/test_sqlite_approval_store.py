@@ -142,6 +142,39 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         store.issue(second)
         self.assertTrue(store.revoke(second.approval_id))
 
+    def test_pre_dispatch_cancellation_does_not_consume_approval(self):
+        store = self.open_store()
+        call = make_call()
+        grant = make_grant(call)
+        store.issue(grant)
+        adapter = FakeAdapter()
+        registry = ToolRegistry(approval_consumer=store.consume)
+        registry.register(adapter)
+        dispatcher = ToolDispatcher(registry)
+
+        cancellation = threading.Event()
+        cancellation.set()
+        cancelled = dispatcher.dispatch(
+            call,
+            granted_permissions={"browser.write"},
+            approval=grant,
+            cancel_event=cancellation,
+            wall_clock=lambda: 100.0,
+        )
+        self.assertEqual(cancelled.status, ResultStatus.CANCELLED)
+        self.assertEqual(cancelled.error_code, "cancelled_before_dispatch")
+        self.assertEqual(len(adapter.calls), 0)
+        self.assertEqual(store.get(grant.approval_id), grant)
+
+        accepted = dispatcher.dispatch(
+            call,
+            granted_permissions={"browser.write"},
+            approval=grant,
+            wall_clock=lambda: 100.0,
+        )
+        self.assertEqual(accepted.status, ResultStatus.SUCCESS)
+        self.assertEqual(len(adapter.calls), 1)
+
     def test_grant_survives_restart_and_dispatcher_consumes_it_once(self):
         original_store = self.open_store()
         call = make_call()
