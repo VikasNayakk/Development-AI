@@ -1,5 +1,12 @@
 """Automation agent contracts and orchestration foundations."""
 
+from .bridge_auth import (
+    BridgeAuthenticator,
+    BridgeAuthenticationError,
+    PairedExtensionSession,
+    PairingManager,
+    extension_id_from_origin,
+)
 from .contracts import (
     ApprovalGrant,
     RuntimeIdentity,
@@ -52,7 +59,9 @@ from .runtime import (
 )
 
 __all__ = [
-    "ApprovalGrant", "RuntimeIdentity", "ExecutionContext", "ResultStatus", "RiskLevel",
+    "ApprovalGrant", "RuntimeIdentity", "ExecutionContext",
+    "BridgeAuthenticator", "BridgeAuthenticationError", "PairedExtensionSession",
+    "PairingManager", "extension_id_from_origin", "ResultStatus", "RiskLevel",
     "SideEffect", "ToolCall", "ToolDispatcher", "ToolManifest",
     "ToolOperation", "ToolRegistry", "ToolResult", "validate_json_value",
     "PlanStep", "StaleTaskRevisionError", "StepSnapshot", "StepStatus",
