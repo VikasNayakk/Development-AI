@@ -2,6 +2,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from core.agent.sqlite_task_state import (
@@ -117,6 +118,39 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
         self.assertEqual(snapshot.revision, 3)
         self.assertEqual(
             sum(step.status == StepStatus.RUNNING for step in snapshot.steps), 1
+        )
+
+    def test_list_tasks_uses_one_consistent_read_snapshot(self):
+        first = self.open_store()
+        self.create_task(first)
+        first.create_task(
+            task_id="task-2",
+            request_id="request-2",
+            goal="Inspect a second page.",
+            steps=plan(),
+        )
+        second = self.open_store()
+        original_load = first._load_task
+        mutation_performed = False
+
+        def load_and_update(task_id):
+            nonlocal mutation_performed
+            snapshot = original_load(task_id)
+            if task_id == "task-1" and not mutation_performed:
+                mutation_performed = True
+                second.start_step("task-2", "inspect")
+            return snapshot
+
+        with patch.object(first, "_load_task", side_effect=load_and_update):
+            listed = first.list_tasks()
+
+        self.assertTrue(mutation_performed)
+        listed_task_2 = next(task for task in listed if task.task_id == "task-2")
+        self.assertEqual(
+            listed_task_2.get_step("inspect").status, StepStatus.PENDING
+        )
+        self.assertEqual(
+            second.get_task("task-2").get_step("inspect").status, StepStatus.RUNNING
         )
 
     def test_duplicate_task_id_is_rejected_without_overwrite(self):
