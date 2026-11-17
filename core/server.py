@@ -120,6 +120,10 @@ def build_training_command(root: Path, payload: dict) -> list[str]:
     block_size = _bounded_int(payload, "block_size", 128, 2, 4096)
     eval_interval = _bounded_int(payload, "eval_interval", 100, 1, 10_000_000)
     eval_iters = _bounded_int(payload, "eval_iters", 20, 1, 100_000)
+    early_stopping_patience = _bounded_int(payload, "early_stopping_patience", 0, 0, 10_000)
+    early_stopping_min_delta = _bounded_float(payload, "early_stopping_min_delta", 0.0, 0.0, 1.0)
+    if early_stopping_patience == 0 and early_stopping_min_delta > 0:
+        raise ValueError("early_stopping_min_delta requires early_stopping_patience greater than zero.")
     resume_interval = _bounded_int(payload, "resume_interval", 100, 1, 10_000_000)
     seed = _bounded_int(payload, "seed", 42, 0, (2**64) - 1)
     learning_rate = _bounded_float(payload, "learning_rate", 3e-4, 1e-8, 1.0)
@@ -151,7 +155,8 @@ def build_training_command(root: Path, payload: dict) -> list[str]:
         "--eval-iters", str(eval_iters),
         "--resume-interval", str(resume_interval),
         "--validation-fraction", str(validation_fraction),
-        "--resume-interval", str(resume_interval),
+        "--early-stopping-patience", str(early_stopping_patience),
+        "--early-stopping-min-delta", str(early_stopping_min_delta),
         "--device", device,
         "--seed", str(seed),
         "--output", str(output_path),
