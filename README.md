@@ -17,7 +17,7 @@ The AI is intended to understand goals, discover tool capabilities, plan work, s
 - Local dataset preparation with explicit rights manifest, provenance hashes, conservative privacy filtering, normalization and exact deduplication.
 - Initial model-independent automation-agent foundation: versioned tool manifests, strict argument/output schemas, explicit registry, permission checks and scoped single-use approvals.
 - Process-local task state engine: validated dependency graphs, guarded step transitions, cancellation requests, revision checks and ordered events.
-- Initial SQLite task ledger: transactional task snapshots and append-only events, restart recovery, schema checks and cross-instance stale-write protection. It is not yet wired into the running server/agent runtime.
+- Initial SQLite task ledger: transactional task snapshots and append-only events, restart recovery, schema checks and cross-instance stale-write protection. Waiting task steps can retain an optional approval ID so the host can reload the matching active grant after restart; older snapshots remain compatible. It is not yet wired into the running server/agent runtime.
 - Initial SQLite approval-grant store: host-issued, exact-scope grants with argument digests, expiry, revocation and atomic single-use consumption. `ToolRegistry` can use it through an injected approval-consumer callback; no real extension adapter or default server integration is connected yet.
 
 This is a small research model, not a capable general-purpose assistant. Initial output will be poor. Capability requires substantial high-quality data, compute and evaluation.
