@@ -113,6 +113,12 @@ Choose model size based on available compute, memory, tokens processed and held-
 
 ### Stage F — Local inference and API
 
+- Completed: add a loopback-only local HTTP API for model status, prompt generation, training jobs, evaluation jobs and job cancellation.
+- Completed: add a responsive local Studio UI with Overview, Playground, Training and Evaluation screens. It uses the repository's existing model, training and evaluation paths; it does not add a hosted API or external model runtime.
+- Completed: restrict UI data and manifest paths to the local `data/` directory, reject traversal and external symlink escapes, limit request sizes, run subprocess commands without a shell, and bind only to `127.0.0.1`.
+- The Studio is a developer workstation interface, not an authenticated multi-user product and must not be exposed to a LAN or public network.
+
+
 Only after training and evaluation are reliable:
 - Define a stable inference interface independent of the training CLI.
 - Completed: validate generation tensor type/shape/device, token-ID range, finite temperature and output-token limit.
