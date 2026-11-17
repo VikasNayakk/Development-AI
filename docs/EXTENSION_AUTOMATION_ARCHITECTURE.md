@@ -56,7 +56,7 @@ Every adapter must publish a machine-readable capability manifest. At minimum, e
 - Timeout, cancellation support, retryability and idempotency behavior.
 - Availability/health and any rate or concurrency limits.
 
-A dispatched tool call must carry a unique request ID, task/plan/step IDs, tool and operation IDs, schema version, validated arguments, deadline and idempotency key when supported. Authorization material must be an opaque reference handled by the adapter/host; secrets and raw credentials must never be inserted into model prompts or committed to the repository.
+A dispatched tool call must carry a unique request ID, task/plan/step IDs, tool ID and exact tool version, operation ID, manifest schema version, validated arguments, an adapter-enforced deadline and an idempotency key when supported. An approval grant is bound to the exact request, task, step, tool/version, operation, arguments digest and idempotency key; approval IDs are single-use within the host registry. The initial in-process implementation applies a 256 KiB JSON payload limit and a 300-second maximum operation deadline. Authorization material must be an opaque reference handled by the adapter/host; secrets and raw credentials must never be inserted into model prompts or committed to the repository.
 
 A normalized result must distinguish at least: `success`, `partial`, `failed`, `denied`, `timeout` and `cancelled`. It should include typed output, changed-resource references, structured error code, retryability and any known side effects. Do not convert a denied or timed-out operation into a success-shaped response.
 
