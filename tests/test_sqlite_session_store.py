@@ -200,7 +200,7 @@ class SQLiteSessionStoreTests(unittest.TestCase):
             migrated._connection.execute(
                 "SELECT schema_version FROM agent_session_store_metadata WHERE singleton = 1"
             ).fetchone()["schema_version"],
-            2,
+            3,
         )
 
     def test_incomplete_schema_fails_closed(self):
