@@ -363,7 +363,10 @@
       attachToJob(response.job.id);
       toast("Training job started.");
     } catch (error) { toast(error.message, true); }
-    finally { showLoading(button, false); }
+    finally {
+      showLoading(button, false);
+      if (state.currentJobId) button.disabled = true;
+    }
   });
 
   $("#stop-training-button").addEventListener("click", async () => {
@@ -398,7 +401,10 @@
       attachToJob(response.job.id);
       toast("Evaluation job started.");
     } catch (error) { toast(error.message, true); }
-    finally { showLoading(button, false); }
+    finally {
+      showLoading(button, false);
+      if (state.currentJobId) button.disabled = true;
+    }
   });
 
   loadStatus();
