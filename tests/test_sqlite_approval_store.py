@@ -15,6 +15,8 @@ from core.agent import (
     ToolOperation,
     ToolRegistry,
     ToolResult,
+    PlanStep,
+    SQLiteTaskStateStore,
     SQLiteApprovalStore,
     ApprovalStoreError,
     ApprovalStoreIntegrityError,
@@ -266,6 +268,23 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         store.issue(grant)
         with self.assertRaisesRegex(ValueError, "already exists"):
             store.issue(grant)
+
+    def test_approval_and_task_stores_can_share_one_database_file(self):
+        tasks = SQLiteTaskStateStore(self.path, clock=lambda: 100.0)
+        self.addCleanup(tasks.close)
+        tasks.create_task(
+            task_id="task-1",
+            request_id="request-1",
+            goal="Inspect a page.",
+            steps=(PlanStep("inspect", "Inspect the page."),),
+        )
+
+        approvals = self.open_store(clock=lambda: 100.0)
+        grant = make_grant()
+        approvals.issue(grant)
+
+        self.assertEqual(tasks.get_task("task-1").goal, "Inspect a page.")
+        self.assertEqual(approvals.get(grant.approval_id), grant)
 
     def test_database_does_not_store_raw_arguments(self):
         store = self.open_store()
