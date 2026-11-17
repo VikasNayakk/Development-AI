@@ -443,7 +443,7 @@ class TaskStateStore:
         while changed:
             changed = False
             for step in task.steps:
-                if step.status == StepStatus.PENDING and any(
+                if step.status in {StepStatus.PENDING, StepStatus.WAITING_APPROVAL} and any(
                     dependency in failed for dependency in step.plan.depends_on
                 ):
                     failed.add(step.plan.step_id)
