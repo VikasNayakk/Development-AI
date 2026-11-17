@@ -222,3 +222,55 @@ with SQLiteApprovalStore("data/automation/approvals.sqlite3") as approvals:
 ```
 
 The store is opt-in and is not currently wired into `core.server` or a browser extension. A process crash after a grant is consumed but before an adapter effect is known still requires adapter idempotency/reconciliation. Durable permission policy, identity/session binding and a broader audit service remain separate integration work.
+
+## AutomationRuntime (initial library integration)
+
+`AutomationRuntime` is the first durable orchestration facade joining `SQLiteTaskStateStore`, `SQLiteApprovalStore`, `ToolRegistry` and `ToolDispatcher` in `core.agent.runtime`. It is a library component; it does not add an HTTP endpoint, browser-extension transport, autonomous planner or default server integration.
+
+- Constructing the runtime opens both ledgers against the same SQLite file. The task store retains its own `user_version`; the approval store uses its separate metadata table.
+- Adapters are registered only by trusted host code through `register_adapter()`. Plans and model output cannot register or directly execute a tool.
+- Every runtime plan step must bind a `tool_id` and operation. The call must match the task request ID and that exact step binding.
+- The host supplies the permission set on every `execute_step()` call. The runtime does not infer, persist or expand permissions.
+- Missing approval for an approval-required operation moves the step to `WAITING_APPROVAL` and persists a cryptographically random opaque approval reference in the task snapshot; no adapter is called. The reference is a lookup handle, not execution permission.
+- Trusted host code may call `issue_approval(call, user_confirmed=True)` only after explicit user consent. The runtime creates the durable grant for the reference already attached to the step, or rotates the reference if its earlier grant is expired, revoked or consumed. Grant lifetime is capped at 15 minutes.
+- On execution, the runtime recovers the approval ID from the persisted task step when the caller omits it, reloads the active grant from SQLite and still sends it through `ToolDispatcher`. Dispatcher validation and atomic single-use consumption remain mandatory; `approve_step()` alone never authorizes an operation.
+- Step start and final result are persisted. Successful tool output is returned to the caller but is not copied into task history. A failed step blocks its dependents; failure results preserve the adapter's side-effect uncertainty flag.
+- `cancel_task()` records the cancellation request and signals active step events. The dispatcher checks cancellation before consuming approval and again before adapter entry; adapters must still cooperate with cancellation/deadlines.
+- `recover_interrupted_tasks(exclusive_startup=True)` is explicit and never retries. Call it only when the host can guarantee that no other process/runtime is executing against the same database. Any persisted `RUNNING` step is marked failed with `side_effects_may_have_occurred=True`, because a crash cannot prove whether an external effect happened.
+- `close()` refuses to close while synchronous adapter calls are active; signal/cancel and wait for those calls to finish before closing both stores.
+
+Minimal shape:
+
+```python
+from core.agent import AutomationRuntime, PlanStep, ToolCall
+
+with AutomationRuntime("data/automation/automation.sqlite3") as runtime:
+    runtime.register_adapter(trusted_adapter)
+    runtime.create_task(
+        task_id="task-001",
+        request_id="request-001",
+        goal="Read the selected page.",
+        steps=(
+            PlanStep(
+                "read", "Read the selected page.",
+                tool_id="browser.reader", operation="read_page",
+            ),
+        ),
+    )
+    call = ToolCall(
+        request_id="request-001",
+        task_id="task-001",
+        step_id="read",
+        tool_id="browser.reader",
+        tool_version="1.0.0",
+        operation="read_page",
+        arguments={"url": "https://example.test"},
+    )
+    result = runtime.execute_step(
+        call, granted_permissions={"browser.read"}
+    )
+```
+
+For approval-required operations, the first `execute_step()` returns `awaiting_approval=True` and an opaque `approval_id`; that reference is also persisted in the task snapshot. Only after the user confirms the exact operation may trusted host code call `issue_approval(call, user_confirmed=True)`. On restart, the host can call `execute_step()` without an approval ID; the runtime reloads the reference from the task and the active grant from SQLite.
+
+This layer does not yet provide principal/user/session binding, approval UX, capability discovery by a model, multi-step planning, cross-process runtime ownership/leases, an application-wide audit service or an authenticated extension bridge. Do not expose it to extension/web callers until identity/session binding, origin checks, replay protection, request authentication, message limits and host permission policy are implemented. External side effects still require adapter-level idempotency and reconciliation.

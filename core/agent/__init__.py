@@ -37,6 +37,14 @@ from .task_state import (
     TaskStatus,
 )
 
+from .runtime import (
+    AutomationRuntime,
+    RuntimeBusyError,
+    RuntimeClosedError,
+    RuntimeRecoveryError,
+    RuntimeStepResult,
+)
+
 __all__ = [
     "ApprovalGrant", "ExecutionContext", "ResultStatus", "RiskLevel",
     "SideEffect", "ToolCall", "ToolDispatcher", "ToolManifest",
@@ -46,4 +54,6 @@ __all__ = [
     "TaskStateStore", "TaskStatus", "SQLiteTaskStateStore",
     "TaskPersistenceError", "TaskStoreIntegrityError", "SQLiteApprovalStore",
     "ApprovalStoreError", "ApprovalStoreIntegrityError",
+    "AutomationRuntime", "RuntimeStepResult", "RuntimeBusyError",
+    "RuntimeClosedError", "RuntimeRecoveryError",
 ]

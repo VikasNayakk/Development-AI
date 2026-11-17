@@ -242,8 +242,21 @@ class TaskStateStore:
             if task.cancel_requested:
                 raise TaskStateError("A cancellation-requested task cannot request approval.")
             step = self._step(task, step_id)
+            if step.status == StepStatus.WAITING_APPROVAL:
+                if approval_id is None or step.approval_id == approval_id:
+                    return task
+                event_type = (
+                    "approval_reference_attached"
+                    if step.approval_id is None
+                    else "approval_reference_replaced"
+                )
+                return self._replace_step(
+                    task,
+                    replace(step, approval_id=approval_id),
+                    event_type, step_id,
+                )
             if step.status != StepStatus.PENDING:
-                raise TaskStateError("Approval can only be requested for a pending step.")
+                raise TaskStateError("Approval can only be requested for a pending or waiting step.")
             return self._replace_step(
                 task,
                 replace(
