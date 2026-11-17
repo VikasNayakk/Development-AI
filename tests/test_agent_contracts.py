@@ -358,9 +358,13 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
             display_name="Changed Tool",
             description="Changed after registration.",
             version="2.0.0",
-            operations=(),
-        ) if False else original
+            operations=(make_operation(name="replacement"),),
+        )
         self.assertIs(self.registry.get_manifest("browser.test"), original)
+        result = self.dispatcher.dispatch(
+            self.call, granted_permissions={"browser.read"}
+        )
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
 
     def test_dispatch_rejects_non_tool_call(self):
         result = self.dispatcher.dispatch(
