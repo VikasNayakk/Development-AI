@@ -283,6 +283,25 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
         with self.assertRaises(TaskStoreIntegrityError):
             store.get_task("task-1")
 
+    def test_malformed_approval_reference_in_snapshot_is_rejected(self):
+        store = self.open_store()
+        task = self.create_task(store)
+        waiting = store.require_approval(
+            task.task_id, "inspect", approval_id="approval-valid-123"
+        )
+        row = store._connection.execute(
+            "SELECT snapshot_json FROM tasks WHERE task_id = ?", (task.task_id,)
+        ).fetchone()
+        payload = json.loads(row["snapshot_json"])
+        payload["steps"][0]["approval_id"] = "invalid approval id"
+        store._connection.execute(
+            "UPDATE tasks SET snapshot_json = ? WHERE task_id = ?",
+            (json.dumps(payload, ensure_ascii=False, separators=(",", ":")), task.task_id),
+        )
+        self.assertGreater(waiting.revision, task.revision)
+        with self.assertRaises(TaskStoreIntegrityError):
+            store.get_task(task.task_id)
+
     def test_future_schema_version_is_rejected(self):
         connection = sqlite3.connect(self.path)
         connection.execute("PRAGMA user_version = 99")
