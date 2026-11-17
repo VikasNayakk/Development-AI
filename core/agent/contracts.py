@@ -77,11 +77,11 @@ def _json_copy(value: Any, *, label: str) -> Any:
         encoded = json.dumps(
             value, ensure_ascii=False, allow_nan=False, separators=(",", ":")
         )
-        if len(encoded.encode("utf-8")) > _MAX_TOOL_PAYLOAD_BYTES:
-            raise ValueError(f"{label} exceeds the {_MAX_TOOL_PAYLOAD_BYTES}-byte limit.")
-        return json.loads(encoded)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{label} must contain JSON-compatible values.") from exc
+    if len(encoded.encode("utf-8")) > _MAX_TOOL_PAYLOAD_BYTES:
+        raise ValueError(f"{label} exceeds the {_MAX_TOOL_PAYLOAD_BYTES}-byte limit.")
+    return json.loads(encoded)
 
 
 def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> None:
@@ -252,7 +252,7 @@ class ToolOperation:
             or self.timeout_seconds <= 0
             or self.timeout_seconds > 300
         ):
-            raise ValueError("timeout_seconds must be a finite positive number.")
+            raise ValueError("timeout_seconds must be finite, positive and no greater than 300 seconds.")
         object.__setattr__(self, "required_permissions", frozenset(self.required_permissions))
         object.__setattr__(self, "input_schema", _json_copy(self.input_schema, label="input_schema"))
         object.__setattr__(self, "output_schema", _json_copy(self.output_schema, label="output_schema"))
@@ -597,6 +597,15 @@ class ToolDispatcher:
                     status=ResultStatus.FAILED, error_code="invalid_adapter_output",
                     side_effects_may_have_occurred=True,
                 )
+        if result.status in {ResultStatus.TIMEOUT, ResultStatus.CANCELLED}:
+            return ToolResult(
+                status=result.status,
+                output=result.output,
+                changed_resources=result.changed_resources,
+                error_code=result.error_code or "uncertain_completion",
+                retryable=False,
+                side_effects_may_have_occurred=True,
+            )
         if not operation.idempotent and result.retryable:
             return ToolResult(
                 status=result.status,
