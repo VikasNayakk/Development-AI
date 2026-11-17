@@ -195,6 +195,8 @@ with SQLiteTaskStateStore("data/automation/tasks.sqlite3") as tasks:
 `SQLiteApprovalStore` persists user-confirmed `ApprovalGrant` records in SQLite. It is deliberately separate from task progress and is not a general audit-log service.
 
 - Only trusted host code may construct and issue a grant after an explicit user confirmation. Model output, page content and an adapter cannot create approval records.
+- Host code must generate an opaque, cryptographically random approval ID (for example, from a secure random token generator); do not use sequential/predictable IDs or expose the ID as a bearer credential through an extension/web API.
+- User/principal and extension-session binding are not yet part of this grant schema. Add and validate that identity scope before exposing durable approvals through an authenticated extension transport.
 - A grant is bound to request, task, step, tool ID and version, operation, idempotency key and a SHA-256 digest of the exact arguments.
 - The store retains the digest and scope, not the raw argument object, cookies, credentials or page contents.
 - Grants expire within 15 minutes of issuance. Expiration is checked both when issuing and consuming.
