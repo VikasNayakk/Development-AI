@@ -455,6 +455,20 @@ class ToolDispatcher:
     ) -> ToolResult:
         if not isinstance(call, ToolCall):
             return self._denied("invalid_call")
+        try:
+            # Take a defensive snapshot so the caller cannot mutate arguments
+            # between policy validation and adapter execution.
+            call = ToolCall(
+                request_id=call.request_id,
+                task_id=call.task_id,
+                step_id=call.step_id,
+                tool_id=call.tool_id,
+                operation=call.operation,
+                arguments=call.arguments,
+                manifest_version=call.manifest_version,
+            )
+        except (TypeError, ValueError):
+            return self._denied("invalid_call")
         if not isinstance(granted_permissions, (set, frozenset)) or any(
             not isinstance(item, str) or not item.strip()
             for item in granted_permissions
