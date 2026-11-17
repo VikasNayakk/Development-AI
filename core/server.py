@@ -28,7 +28,8 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_PROMPT_CHARS = 12_000
 MAX_GENERATION_TOKENS = 256
 MAX_LOG_LINES = 400
-MAX_CAPTURED_OUTPUT = 8 * 1024 * 1024
+MAX_CAPTURED_OUTPUT = 4 * 1024 * 1024
+MAX_RETAINED_JOBS = 20
 _GENERATION_LOCK = threading.Lock()
 
 
@@ -194,6 +195,17 @@ class LocalJobManager:
 
     def start(self, kind: str, command: list[str]) -> dict:
         with self._lock:
+            if len(self._jobs) >= MAX_RETAINED_JOBS:
+                oldest = sorted(
+                    self._jobs.values(), key=lambda item: item["created_at"]
+                )
+                for previous in oldest:
+                    if previous["id"] != self._active_job_id and previous["status"] in {
+                        "succeeded", "failed", "cancelled"
+                    }:
+                        self._jobs.pop(previous["id"], None)
+                        if len(self._jobs) < MAX_RETAINED_JOBS:
+                            break
             if self._active_job_id is not None:
                 active = self._jobs.get(self._active_job_id, {})
                 if active.get("status") in {"queued", "running", "stopping"}:
@@ -244,6 +256,8 @@ class LocalJobManager:
             job["status"] = "running"
 
         captured: list[str] = []
+        captured_bytes = 0
+        capture_output = job["kind"] == "evaluation"
         try:
             process = subprocess.Popen(
                 job["_command"],
@@ -266,8 +280,10 @@ class LocalJobManager:
             for line in process.stdout:
                 with self._lock:
                     self._append_log(job, line)
-                if sum(len(part) for part in captured) < MAX_CAPTURED_OUTPUT:
-                    captured.append(line[:8000])
+                if capture_output and captured_bytes < MAX_CAPTURED_OUTPUT:
+                    chunk = line[:MAX_CAPTURED_OUTPUT - captured_bytes]
+                    captured.append(chunk)
+                    captured_bytes += len(chunk)
             return_code = process.wait()
             output = "".join(captured)
             with self._lock:
@@ -311,6 +327,10 @@ class LocalJobManager:
                 job["status"] = "stopping"
         if process is not None and process.poll() is None:
             process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
         return self.get(job_id)
 
     def get(self, job_id: str) -> dict:
