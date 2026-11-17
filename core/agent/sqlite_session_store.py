@@ -221,10 +221,22 @@ class SQLiteSessionStore:
             raise SessionStoreError("Session store clock must return a finite Unix timestamp.")
         return float(value)
 
-    def issue(self, identity: RuntimeIdentity, *, expires_at_unix: float) -> None:
-        """Register a session after the host has authenticated its owner."""
+    def issue(
+        self,
+        identity: RuntimeIdentity,
+        *,
+        credential: str,
+        client_id: str,
+        expires_at_unix: float,
+    ) -> None:
+        """Register a session and hash its separate bearer credential."""
         if not isinstance(identity, RuntimeIdentity):
             raise TypeError("identity must be a RuntimeIdentity.")
+        if not isinstance(credential, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32,256}", credential):
+            raise ValueError("credential must be a high-entropy URL-safe token of 32-256 characters.")
+        if not isinstance(client_id, str) or not re.fullmatch(r"[a-p]{32}", client_id):
+            raise ValueError("client_id must be a Chrome extension ID.")
+        credential_sha256 = hashlib.sha256(credential.encode("ascii")).hexdigest()
         if (
             isinstance(expires_at_unix, bool)
             or not isinstance(expires_at_unix, (int, float))
@@ -245,10 +257,14 @@ class SQLiteSessionStore:
                 self._connection.execute(
                     """
                     INSERT INTO agent_sessions (
-                        session_id, principal_id, issued_at_unix, expires_at_unix
-                    ) VALUES (?, ?, ?, ?)
+                        session_id, principal_id, client_id, credential_sha256,
+                        issued_at_unix, expires_at_unix
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     """,
-                    (identity.session_id, identity.principal_id, now, float(expires_at_unix)),
+                    (
+                        identity.session_id, identity.principal_id, client_id,
+                        credential_sha256, now, float(expires_at_unix),
+                    ),
                 )
                 self._connection.commit()
             except sqlite3.IntegrityError as exc:
