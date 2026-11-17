@@ -89,7 +89,7 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
         approvals = SQLiteApprovalStore(self.path, clock=lambda: 100.0)
         self.addCleanup(approvals.close)
         grant = ApprovalGrant(
-            approval_id="opaque-random-approval-id",
+            approval_id="_opaque-random-approval-id",
             request_id="request-approval",
             task_id="task-approval",
             step_id="submit",
