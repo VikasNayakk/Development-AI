@@ -15,7 +15,7 @@ The AI is intended to understand goals, discover tool capabilities, plan work, s
 - Experimental project-owned byte-level BPE tokenizer and corpus benchmark CLI; not yet connected to model training.
 - Disjoint train/validation evaluation and best-validation checkpointing.
 - Local dataset preparation with explicit rights manifest, provenance hashes, conservative privacy filtering, normalization and exact deduplication.
-- Initial model-independent automation-agent foundation: versioned tool manifests, strict argument/output schemas, explicit registry, permission checks and scoped single-use approvals. No real extension or external automation adapters are connected yet.
+- Initial model-independent automation-agent foundation: versioned tool manifests, strict argument/output schemas, explicit registry, permission checks and scoped single-use approvals.\n- Process-local task state engine: validated dependency graphs, guarded step transitions, cancellation requests, revision checks and ordered events. State is not yet durable. No real extension or external automation adapters are connected yet.
 
 This is a small research model, not a capable general-purpose assistant. Initial output will be poor. Capability requires substantial high-quality data, compute and evaluation.
 
