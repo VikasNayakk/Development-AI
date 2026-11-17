@@ -258,7 +258,6 @@ class SQLiteSessionStore:
                 revoked_at = row["revoked_at_unix"]
                 if (
                     row["session_id"] != identity.session_id
-                    or row["principal_id"] != identity.principal_id
                     or any(type(value) not in (int, float) or not math.isfinite(value) for value in timestamps)
                     or row["expires_at_unix"] <= row["issued_at_unix"]
                     or row["expires_at_unix"] - row["issued_at_unix"] > _MAX_SESSION_TTL_SECONDS
@@ -272,6 +271,9 @@ class SQLiteSessionStore:
                     )
                 ):
                     raise SessionStoreIntegrityError("Stored session record is malformed.")
+                if row["principal_id"] != identity.principal_id:
+                    self._connection.commit()
+                    return False
                 active = (
                     revoked_at is None
                     and row["issued_at_unix"] <= now
