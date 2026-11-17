@@ -292,6 +292,18 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         finally:
             store._connection.set_trace_callback(None)
 
+    def test_future_issued_grant_is_not_recovered_after_clock_rollback(self):
+        store = self.open_store(clock=lambda: 100.0)
+        grant = make_grant(expires=200.0)
+        store.issue(grant)
+        store._connection.execute("DROP TRIGGER approval_grants_scope_immutable")
+        store._connection.execute(
+            "UPDATE approval_grants SET issued_at_unix = 101.0 WHERE approval_id = ?",
+            (grant.approval_id,),
+        )
+        self.assertIsNone(store.get(grant.approval_id))
+        self.assertFalse(store.consume(grant))
+
     def test_expired_grant_is_not_consumed(self):
         issuer = self.open_store(clock=lambda: 100.0)
         grant = make_grant(expires=150.0)
