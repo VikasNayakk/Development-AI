@@ -111,22 +111,16 @@ Do not scale dimensions by guesswork. Establish a measured small-model baseline 
 
 Choose model size based on available compute, memory, tokens processed and held-out metrics. A larger randomly initialized model trained on insufficient data can perform worse than a smaller well-trained model.
 
-### Stage F — Local inference and API
-
-- Completed: add a loopback-only local HTTP API for model status, prompt generation, training jobs, evaluation jobs and job cancellation.
-- Completed: add a responsive local Studio UI with Overview, Playground, Training and Evaluation screens. It uses the repository's existing model, training and evaluation paths; it does not add a hosted API or external model runtime.
-- Completed: restrict UI data and manifest paths to the local `data/` directory, reject traversal and external symlink escapes, limit request sizes, run subprocess commands without a shell, and bind only to `127.0.0.1`.
-- The Studio is a developer workstation interface, not an authenticated multi-user product and must not be exposed to a LAN or public network.
-
+### Stage F — Local inference, API and Studio UI
 
 Only after training and evaluation are reliable:
-- Define a stable inference interface independent of the training CLI.
-- Completed: validate generation tensor type/shape/device, token-ID range, finite temperature and output-token limit.
-- Completed: add deterministic greedy decoding and optional seeded sampling; sampling remains the compatibility default.
-- Add request limits, timeouts and structured error responses.
-- Expose a local HTTP API with health and model-metadata endpoints.
-- Keep the API local by default; authentication and network exposure must be explicit.
-- A project-owned optimized CPU runtime is a later optimization, not a prerequisite for the first correct local inference API.
+
+- Completed: add a loopback-only local HTTP API for checkpoint status, prompt generation, training jobs, evaluation jobs and cancellation.
+- Completed: add a responsive local Studio UI with Overview, Playground, Training and Evaluation screens, connected to the repository's existing model, trainer and evaluator.
+- Completed: validate generation tensor type/shape/device, token-ID range, finite temperature and output-token limits; expose deterministic greedy decoding and optional seeded sampling.
+- Completed: validate local data/manifest and artifact paths; reject traversal and symlink escapes; limit request sizes; execute subprocesses without a shell; reject non-local Host/Origin requests; bind only to `127.0.0.1`.
+- Pending: formal versioning of the inference API contract, generation timeouts/rate limits, and production-grade authentication/multi-user access. The Studio is a developer workstation UI, not an authenticated application.
+- A project-owned optimized CPU runtime is a later optimization, not a prerequisite for the first correct local inference interface.
 
 ## Acceptance criteria before calling it a question-answering model
 
