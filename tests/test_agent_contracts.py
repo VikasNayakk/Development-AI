@@ -293,6 +293,52 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         self.assertEqual(result.error_code, "approval_scope_mismatch")
         self.assertEqual(len(adapter.calls), 0)
 
+    def test_approval_grant_is_single_use(self):
+        operation = make_operation(
+            name="submit_form",
+            risk_level=RiskLevel.HIGH,
+            side_effect=SideEffect.IRREVERSIBLE,
+            requires_approval=True,
+        )
+        adapter = FakeAdapter(operation=operation)
+        registry = ToolRegistry()
+        registry.register(adapter)
+        dispatcher = ToolDispatcher(registry)
+        call = make_call(operation="submit_form")
+        approval = self.make_approval(call)
+        first = dispatcher.dispatch(
+            call, granted_permissions={"browser.read"}, approval=approval
+        )
+        second = dispatcher.dispatch(
+            call, granted_permissions={"browser.read"}, approval=approval
+        )
+        self.assertEqual(first.status, ResultStatus.SUCCESS)
+        self.assertEqual(second.error_code, "approval_reused")
+        self.assertEqual(len(adapter.calls), 1)
+
+    def test_non_idempotent_operations_cannot_advertise_retryable_result(self):
+        operation = make_operation(
+            side_effect=SideEffect.REVERSIBLE,
+            idempotent=False,
+        )
+        adapter = FakeAdapter(operation=operation, result=ToolResult(
+            status=ResultStatus.FAILED,
+            error_code="uncertain_completion",
+            retryable=True,
+            side_effects_may_have_occurred=True,
+        ))
+        registry = ToolRegistry()
+        registry.register(adapter)
+        result = ToolDispatcher(registry).dispatch(
+            self.call, granted_permissions={"browser.read"}
+        )
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertFalse(result.retryable)
+
+    def test_tool_arguments_have_a_hard_size_limit(self):
+        with self.assertRaises(ValueError):
+            make_call(arguments={"url": "x" * (256 * 1024)})
+
     def test_explicit_pre_dispatch_cancellation_skips_adapter(self):
         cancellation = threading.Event()
         cancellation.set()
