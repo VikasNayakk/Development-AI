@@ -11,6 +11,10 @@ The project must remain independent at the model layer:
 - The model, tokenizer implementation, training policy, checkpoint format and eventual inference runtime remain project-owned.
 - Private prompts, credentials and private datasets must never be committed to the public repository.
 
+## Product integration objective
+
+This model is also intended to power the browser extension and coordinate other automation tools. The agent must use structured tool capabilities, a deterministic policy/approval gate and versioned adapters; model-generated prose must never be executed as an unchecked command. The extension is one adapter, not the only integration. See [docs/EXTENSION_AUTOMATION_ARCHITECTURE.md](EXTENSION_AUTOMATION_ARCHITECTURE.md) for the integration lifecycle, permission boundaries, contract and acceptance tests. This platform is a planned capability; the current local Studio API is not yet an extension API.
+
 ## Verified implementation baseline
 
 The current production path is:
