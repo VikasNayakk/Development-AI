@@ -245,12 +245,15 @@ class TaskStateStore:
             if step.status == StepStatus.WAITING_APPROVAL:
                 if approval_id is None or step.approval_id == approval_id:
                     return task
-                if step.approval_id is not None:
-                    raise TaskStateError("A different approval reference is already attached.")
+                event_type = (
+                    "approval_reference_attached"
+                    if step.approval_id is None
+                    else "approval_reference_replaced"
+                )
                 return self._replace_step(
                     task,
                     replace(step, approval_id=approval_id),
-                    "approval_reference_attached", step_id,
+                    event_type, step_id,
                 )
             if step.status != StepStatus.PENDING:
                 raise TaskStateError("Approval can only be requested for a pending or waiting step.")
