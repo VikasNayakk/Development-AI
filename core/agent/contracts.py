@@ -38,6 +38,7 @@ class ResultStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+_MAX_TOOL_PAYLOAD_BYTES = 256 * 1024
 _JSON_TYPES = {"object", "array", "string", "integer", "number", "boolean", "null"}
 _SCHEMA_KEYS = {
     "object": {"type", "properties", "required", "additionalProperties", "enum"},
@@ -76,6 +77,8 @@ def _json_copy(value: Any, *, label: str) -> Any:
         encoded = json.dumps(
             value, ensure_ascii=False, allow_nan=False, separators=(",", ":")
         )
+        if len(encoded.encode("utf-8")) > _MAX_TOOL_PAYLOAD_BYTES:
+            raise ValueError(f"{label} exceeds the {_MAX_TOOL_PAYLOAD_BYTES}-byte limit.")
         return json.loads(encoded)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{label} must contain JSON-compatible values.") from exc
@@ -433,6 +436,8 @@ class ToolDispatcher:
 
     def __init__(self, registry: ToolRegistry) -> None:
         self._registry = registry
+        self._approval_lock = threading.Lock()
+        self._consumed_approval_ids: set[str] = set()
 
     @staticmethod
     def _denied(code: str) -> ToolResult:
@@ -485,6 +490,10 @@ class ToolDispatcher:
                 return self._denied("approval_scope_mismatch")
             if approval.expires_at_unix <= wall_clock():
                 return self._denied("approval_expired")
+            with self._approval_lock:
+                if approval.approval_id in self._consumed_approval_ids:
+                    return self._denied("approval_reused")
+                self._consumed_approval_ids.add(approval.approval_id)
 
         cancel_event = cancel_event or threading.Event()
         if cancel_event.is_set():
