@@ -115,12 +115,13 @@ class PairingManager:
         supplied_digest = hashlib.sha256(pairing_code.encode("ascii")).hexdigest()
         with self._lock:
             now = self._now()
-            if (
-                self._pairing_digest is None
-                or self._pairing_expires_at is None
-                or self._pairing_expires_at <= now
-                or not hmac.compare_digest(self._pairing_digest, supplied_digest)
-            ):
+            if self._pairing_digest is None or self._pairing_expires_at is None:
+                raise BridgeAuthenticationError("Pairing code is invalid, expired or already used.")
+            if self._pairing_expires_at <= now:
+                self._pairing_digest = None
+                self._pairing_expires_at = None
+                raise BridgeAuthenticationError("Pairing code is invalid, expired or already used.")
+            if not hmac.compare_digest(self._pairing_digest, supplied_digest):
                 raise BridgeAuthenticationError("Pairing code is invalid, expired or already used.")
             # Consume before writing the durable session. If storage fails, require a new code.
             self._pairing_digest = None
