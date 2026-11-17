@@ -275,6 +275,8 @@ class SQLiteTaskStateStore:
                         side_effects_may_have_occurred=may_have_effects,
                     )
                 )
+            if any(event_row["sequence"] != index for index, event_row in enumerate(event_rows, start=1)):
+                raise TaskStoreIntegrityError("Stored task event sequence column is inconsistent.")
             events = tuple(
                 cls._event_from_json(event_row["event_json"], index)
                 for index, event_row in enumerate(event_rows, start=1)
@@ -313,11 +315,23 @@ class SQLiteTaskStateStore:
             or not isinstance(task.updated_at_unix, (int, float))
             or not math.isfinite(task.updated_at_unix)
             or task.created_at_unix > task.updated_at_unix
+            or row["created_at"] != task.created_at_unix
+            or row["updated_at"] != task.updated_at_unix
+            or not task.goal.strip()
+            or len(task.goal) > 20_000
             or len(task.steps) == 0
             or len(task.steps) > 100
         ):
             raise TaskStoreIntegrityError("Stored task snapshot failed integrity checks.")
         try:
+            TaskStateStore._validate_identifier(task.task_id, "task_id")
+            TaskStateStore._validate_identifier(task.request_id, "request_id")
+            step_ids = [step.plan.step_id for step in task.steps]
+            if len(step_ids) != len(set(step_ids)):
+                raise ValueError("Duplicate step identifiers.")
+            known_step_ids = set(step_ids)
+            if any(set(step.plan.depends_on) - known_step_ids for step in task.steps):
+                raise ValueError("Unknown step dependency.")
             TaskStateStore._validate_acyclic(tuple(step.plan for step in task.steps))
         except (ValueError, KeyError) as exc:
             raise TaskStoreIntegrityError("Stored task dependency graph is invalid.") from exc
