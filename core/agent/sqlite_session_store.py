@@ -239,10 +239,24 @@ class SQLiteSessionStore:
                         "SELECT name FROM sqlite_master WHERE type = 'table'"
                     ).fetchall()
                 }
+                request_columns = {
+                    row["name"]
+                    for row in connection.execute(
+                        "PRAGMA table_info(agent_bridge_request_ids)"
+                    ).fetchall()
+                }
+                indexes = {
+                    row["name"]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'index'"
+                    ).fetchall()
+                }
                 if (
                     not required_columns.issubset(columns)
                     or not required_triggers.issubset(triggers)
                     or "agent_bridge_request_ids" not in tables
+                    or not {"session_id", "request_id", "received_at_unix"}.issubset(request_columns)
+                    or "agent_bridge_request_ids_received_idx" not in indexes
                 ):
                     raise SessionStoreIntegrityError("Session database schema is incomplete.")
             connection.commit()
@@ -492,8 +506,18 @@ class SQLiteSessionStore:
                     or not math.isfinite(issued_at)
                     or type(expires_at) not in (int, float)
                     or not math.isfinite(expires_at)
+                    or expires_at <= issued_at
+                    or expires_at - issued_at > _MAX_SESSION_TTL_SECONDS
                     or expires_at <= now
                     or issued_at > now
+                    or (
+                        revoked_at is not None
+                        and (
+                            type(revoked_at) not in (int, float)
+                            or not math.isfinite(revoked_at)
+                            or revoked_at < issued_at
+                        )
+                    )
                     or revoked_at is not None
                 ):
                     self._connection.rollback()
