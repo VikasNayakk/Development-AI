@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>Development-AI Studio</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" aria-label="Development-AI Studio home">
+        <span class="brand-mark">D<span>·</span>AI</span>
+        <span class="brand-copy"><strong>Development-AI</strong><small>LOCAL STUDIO</small></span>
+      </a>
+      <div class="workspace-label">WORKSPACE</div>
+      <nav class="nav-list" aria-label="Main navigation">
+        <button class="nav-item active" data-view="overview"><span class="nav-icon">◫</span> Overview</button>
+        <button class="nav-item" data-view="playground"><span class="nav-icon">✳</span> Playground</button>
+        <button class="nav-item" data-view="training"><span class="nav-icon">⌁</span> Training</button>
+        <button class="nav-item" data-view="evaluation"><span class="nav-icon">▤</span> Evaluation</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="local-note"><span class="local-dot"></span><div><strong>Private workspace</strong><small>Runs on this computer</small></div></div>
+        <div class="sidebar-version">Development-AI · Research build</div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="mobile-brand"><span class="brand-mark">D<span>·</span>AI</span><strong>Development-AI</strong></div>
+        <div class="crumb"><span>Workspace</span><span class="crumb-divider">/</span><strong id="current-section">Overview</strong></div>
+        <div class="topbar-right">
+          <span id="connection-indicator" class="connection"><i></i><span>Connecting</span></span>
+          <button id="refresh-button" class="icon-button" title="Refresh status" aria-label="Refresh status">↻</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="view active" id="view-overview">
+          <div class="page-heading">
+            <div><div class="eyebrow">YOUR LOCAL AI WORKSPACE</div><h1>Overview</h1><p class="page-subtitle">A clear view of your model, training runs and evaluation.</p></div>
+            <span class="local-badge"><i></i> Local environment</span>
+          </div>
+
+          <div id="model-notice" class="notice warning" role="status">
+            <span class="notice-symbol">!</span><div><strong>Training checkpoint not found</strong><p>Prepare a dataset and complete a training run before using the Playground.</p></div>
+            <button class="text-button" data-go="training">Open training <span>→</span></button>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card"><div class="metric-label">MODEL STATUS <span class="metric-symbol">◈</span></div><div id="metric-model-status" class="metric-value">Checking…</div><div id="metric-model-description" class="metric-foot">Loading checkpoint information</div></article>
+            <article class="metric-card"><div class="metric-label">TRAINABLE PARAMETERS <span class="metric-symbol">⌘</span></div><div id="metric-parameters" class="metric-value">—</div><div class="metric-foot">Unique model parameters</div></article>
+            <article class="metric-card"><div class="metric-label">VOCABULARY <span class="metric-symbol">▦</span></div><div id="metric-vocab" class="metric-value">—</div><div id="metric-tokenizer" class="metric-foot">Production tokenizer</div></article>
+            <article class="metric-card"><div class="metric-label">TRAINING STEPS <span class="metric-symbol">↗</span></div><div id="metric-steps" class="metric-value">—</div><div class="metric-foot">Recorded in latest checkpoint</div></article>
+          </div>
+
+          <div class="section-grid">
+            <article class="panel architecture-panel">
+              <div class="panel-header"><div><div class="eyebrow">MODEL FOUNDATION</div><h2>Architecture</h2></div><span class="subtle-tag">Project-owned</span></div>
+              <div class="architecture-name"><span class="architecture-icon">D</span><div><strong>Decoder-only Transformer</strong><small>Autoregressive language model</small></div></div>
+              <div class="architecture-stats">
+                <div><span>Context length</span><strong id="arch-context">—</strong></div>
+                <div><span>Model width</span><strong id="arch-width">—</strong></div>
+                <div><span>Attention heads</span><strong id="arch-heads">—</strong></div>
+                <div><span>Transformer blocks</span><strong id="arch-layers">—</strong></div>
+              </div>
+              <div class="panel-footnote">Weights are initialized and trained by this repository. No pretrained model is loaded.</div>
+            </article>
+
+            <article class="panel quick-panel">
+              <div class="panel-header"><div><div class="eyebrow">GET STARTED</div><h2>Workspace actions</h2></div></div>
+              <button class="action-row" data-go="training"><span class="action-icon purple">⌁</span><span><strong>Start a training run</strong><small>Configure steps, batch size and device</small></span><b>→</b></button>
+              <button class="action-row" data-go="playground"><span class="action-icon blue">✳</span><span><strong>Open Playground</strong><small>Generate text from your local checkpoint</small></span><b>→</b></button>
+              <button class="action-row" data-go="evaluation"><span class="action-icon green">▤</span><span><strong>Evaluate a checkpoint</strong><small>Measure held-out language metrics</small></span><b>→</b></button>
+            </article>
+          </div>
+
+          <article class="panel recent-panel">
+            <div class="panel-header"><div><div class="eyebrow">ACTIVITY</div><h2>Recent jobs</h2></div><span id="jobs-count" class="subtle-tag">0 jobs</span></div>
+            <div id="recent-jobs" class="empty-state compact">No training or evaluation jobs yet.</div>
+          </article>
+          <p class="disclaimer">Research software, not a production assistant. Byte-level prediction metrics do not prove reasoning, factuality or answer quality.</p>
+        </section>
+
+        <section class="view" id="view-playground">
+          <div class="page-heading">
+            <div><div class="eyebrow">INFERENCE WORKSPACE</div><h1>Playground</h1><p class="page-subtitle">Try your locally trained Development-AI checkpoint.</p></div>
+            <span id="playground-checkpoint" class="subtle-tag">Checking checkpoint…</span>
+          </div>
+          <div class="notice warning" id="playground-warning"><span class="notice-symbol">!</span><div><strong>Checkpoint required</strong><p>Train a model before generating output. The current random initialization is not a capable assistant.</p></div><button class="text-button" data-go="training">Train model →</button></div>
+          <div class="playground-layout">
+            <article class="panel chat-panel">
+              <div class="chat-panel-head"><div><span class="chat-avatar">D</span><div><strong>Development-AI</strong><small>Local inference · UTF-8 byte tokenizer</small></div></div><span class="live-tag"><i></i> On device</span></div>
+              <div id="chat-output" class="chat-output">
+                <div class="welcome-message"><div class="welcome-spark">✳</div><h2>Test your own model</h2><p>Write a prompt below. The model's response will appear here.</p></div>
+              </div>
+              <form id="generation-form" class="composer">
+                <label class="sr-only" for="prompt-input">Prompt</label>
+                <textarea id="prompt-input" rows="3" maxlength="12000" placeholder="Write a prompt in Hindi, English or Hinglish…" required></textarea>
+                <div class="composer-footer"><span>Keep prompts short while testing this small research model.</span><button type="submit" id="generate-button" class="primary-button">Generate <span>↗</span></button></div>
+              </form>
+            </article>
+            <aside class="panel controls-panel">
+              <div class="panel-header"><div><div class="eyebrow">GENERATION</div><h2>Controls</h2></div></div>
+              <label class="field-label" for="max-tokens">Maximum new tokens <strong id="max-tokens-value">120</strong></label>
+              <input id="max-tokens" type="range" min="1" max="256" value="120">
+              <label class="field-label" for="temperature">Temperature</label>
+              <input id="temperature" class="text-input" type="number" min="0.05" max="2" step="0.05" value="0.8">
+              <label class="field-label" for="generation-device">Device</label>
+              <select id="generation-device" class="text-input"><option value="cpu">CPU</option><option value="cuda">CUDA</option></select>
+              <label class="check-row"><input id="greedy-mode" type="checkbox"><span><strong>Greedy decoding</strong><small>Choose the highest-probability next byte</small></span></label>
+              <label class="field-label" for="generation-seed">Seed <span class="optional-label">optional</span></label>
+              <input id="generation-seed" class="text-input" type="number" min="0" step="1" placeholder="Random">
+              <div class="control-note">Sampling is the default. A seed makes sampled output reproducible for the same checkpoint and device.</div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-training">
+          <div class="page-heading"><div><div class="eyebrow">MODEL OPTIMIZATION</div><h1>Training</h1><p class="page-subtitle">Configure and monitor a local training run.</p></div><span class="subtle-tag">AdamW · FP32 baseline</span></div>
+          <div class="notice info"><span class="notice-symbol">i</span><div><strong>Before you start</strong><p>Use a rights-cleared UTF-8 corpus. Training, validation and test data must remain separated. A successful run does not by itself make the model good at answering questions.</p></div></div>
+          <div class="training-layout">
+            <form id="training-form" class="panel form-panel">
+              <div class="panel-header"><div><div class="eyebrow">RUN CONFIGURATION</div><h2>Training settings</h2></div><span class="subtle-tag">Local only</span></div>
+              <div class="form-section-title">Dataset</div>
+              <label class="field-label" for="training-data-path">Training file <span class="optional-label">inside data/</span></label>
+              <input id="training-data-path" class="text-input" value="processed/train.txt" required>
+              <div class="form-grid">
+                <div><label class="field-label" for="train-steps">Optimizer steps</label><input id="train-steps" class="text-input" type="number" min="1" value="1000" required></div>
+                <div><label class="field-label" for="train-batch">Micro-batch size</label><input id="train-batch" class="text-input" type="number" min="1" value="8" required></div>
+                <div><label class="field-label" for="train-accumulation">Gradient accumulation</label><input id="train-accumulation" class="text-input" type="number" min="1" value="4" required></div>
+                <div><label class="field-label" for="train-block">Context length</label><input id="train-block" class="text-input" type="number" min="2" value="128" required></div>
+                <div><label class="field-label" for="train-lr">Learning rate</label><input id="train-lr" class="text-input" type="number" min="0.00000001" max="1" step="any" value="0.0003" required></div>
+                <div><label class="field-label" for="train-seed">Random seed</label><input id="train-seed" class="text-input" type="number" min="0" value="42" required></div>
+                <div><label class="field-label" for="train-eval-interval">Evaluation interval</label><input id="train-eval-interval" class="text-input" type="number" min="1" value="100" required></div>
+                <div><label class="field-label" for="train-eval-iters">Evaluation iterations</label><input id="train-eval-iters" class="text-input" type="number" min="1" value="20" required></div>
+                <div><label class="field-label" for="train-validation">Validation fraction</label><input id="train-validation" class="text-input" type="number" min="0.001" max="0.499" step="0.001" value="0.1" required></div>
+                <div><label class="field-label" for="train-device">Compute device</label><select id="train-device" class="text-input"><option value="cpu">CPU</option><option value="cuda">CUDA</option></select></div>
+              </div>
+              <label class="check-row resume-row"><input id="resume-training" type="checkbox"><span><strong>Resume previous run</strong><small>Continue from latest.resume.pt with the same corpus and settings.</small></span></label>
+              <div class="form-actions"><span>Checkpoint output: <code>artifacts/latest.pt</code></span><button id="start-training-button" class="primary-button" type="submit">Start training <span>↗</span></button></div>
+            </form>
+            <aside class="panel run-panel">
+              <div class="panel-header"><div><div class="eyebrow">LIVE MONITOR</div><h2>Training run</h2></div><span id="training-state" class="status-pill neutral">Idle</span></div>
+              <div class="progress-summary"><div><strong id="training-progress-value">0%</strong><span id="training-step-value">No active run</span></div><div class="progress-track"><div id="training-progress-bar" class="progress-bar"></div></div></div>
+              <div id="training-live-metrics" class="live-metrics"><div><span>Current validation loss</span><strong>—</strong></div><div><span>Measured throughput</span><strong>—</strong></div></div>
+              <div class="log-header"><strong>Run log</strong><button id="clear-log-button" class="text-button" type="button">Clear view</button></div>
+              <pre id="training-log" class="log-box">No training output yet.</pre>
+              <button id="stop-training-button" class="secondary-button full-width" type="button" disabled>Stop current job</button>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-evaluation">
+          <div class="page-heading"><div><div class="eyebrow">QUALITY MEASUREMENT</div><h1>Evaluation</h1><p class="page-subtitle">Measure next-byte prediction on separate held-out datasets.</p></div><span class="subtle-tag">Hindi · English · Hinglish</span></div>
+          <div class="notice info"><span class="notice-symbol">i</span><div><strong>Keep the test set untouched</strong><p>Use validation results for experiments. Run the test split only for final reporting. Byte loss/perplexity does not measure reasoning or answer quality.</p></div></div>
+          <div class="evaluation-layout">
+            <form id="evaluation-form" class="panel form-panel">
+              <div class="panel-header"><div><div class="eyebrow">EVALUATION INPUTS</div><h2>Held-out manifest</h2></div></div>
+              <label class="field-label" for="evaluation-manifest">Manifest path <span class="optional-label">inside data/</span></label>
+              <input id="evaluation-manifest" class="text-input" value="evaluation/manifest.json" required>
+              <label class="field-label" for="evaluation-device">Compute device</label>
+              <select id="evaluation-device" class="text-input"><option value="cpu">CPU</option><option value="cuda">CUDA</option></select>
+              <label class="check-row"><input id="compare-untrained" type="checkbox" checked><span><strong>Compare against untrained baseline</strong><small>Use the same architecture with a seeded random initialization.</small></span></label>
+              <label class="field-label" for="baseline-seed">Baseline seed</label>
+              <input id="baseline-seed" class="text-input" type="number" min="0" value="42">
+              <button id="start-evaluation-button" type="submit" class="primary-button full-width">Run evaluation <span>↗</span></button>
+              <div id="evaluation-state-note" class="control-note">Requires a trained checkpoint and six separate language/split datasets for a complete report.</div>
+            </form>
+            <article class="panel results-panel">
+              <div class="panel-header"><div><div class="eyebrow">RESULTS</div><h2>Evaluation report</h2></div><span id="evaluation-state" class="status-pill neutral">Not run</span></div>
+              <div id="evaluation-results" class="empty-state">Run an evaluation to see per-language loss, perplexity and baseline comparison.</div>
+              <pre id="evaluation-json" class="result-json" hidden></pre>
+            </article>
+          </div>
+        </section>
+
+        <footer class="footer"><span>Development-AI Studio</span><span>Local-first · Project-owned model</span></footer>
+      </div>
+    </main>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+</body>
+</html>
