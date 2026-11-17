@@ -288,6 +288,48 @@ class SQLiteApprovalStore:
             and grant.user_confirmed is True
         )
 
+    @staticmethod
+    def _session_is_active(
+        connection: sqlite3.Connection,
+        principal_id: str,
+        session_id: str,
+        now: float,
+    ) -> bool:
+        """Check session state in the same transaction as grant issue/read/consume."""
+        try:
+            row = connection.execute(
+                "SELECT * FROM agent_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            raise ApprovalStoreError(
+                "The durable active-session registry is unavailable."
+            ) from exc
+        if row is None:
+            return False
+        issued_at = row["issued_at_unix"]
+        expires_at = row["expires_at_unix"]
+        revoked_at = row["revoked_at_unix"]
+        if (
+            row["principal_id"] != principal_id
+            or type(issued_at) not in (int, float)
+            or not math.isfinite(issued_at)
+            or type(expires_at) not in (int, float)
+            or not math.isfinite(expires_at)
+            or expires_at <= issued_at
+            or expires_at - issued_at > 24 * 60 * 60
+            or (
+                revoked_at is not None
+                and (
+                    type(revoked_at) not in (int, float)
+                    or not math.isfinite(revoked_at)
+                    or revoked_at < issued_at
+                )
+            )
+        ):
+            raise ApprovalStoreIntegrityError("Stored session record is malformed.")
+        return revoked_at is None and issued_at <= now < expires_at
+
     def issue(self, grant: ApprovalGrant) -> None:
         """Persist a host-created grant after user confirmation."""
         self._validate_grant(grant)
@@ -302,6 +344,10 @@ class SQLiteApprovalStore:
                     raise ValueError(
                         f"Approval grant lifetime cannot exceed {_MAX_APPROVAL_TTL_SECONDS} seconds."
                     )
+                if grant.principal_id is not None and not self._session_is_active(
+                    self._connection, grant.principal_id, grant.session_id, now
+                ):
+                    raise ApprovalStoreError("Cannot issue an approval for an inactive session.")
                 self._connection.execute(
                     """
                     INSERT INTO approval_grants (
@@ -388,6 +434,12 @@ class SQLiteApprovalStore:
                     or row["revoked_at_unix"] is not None
                     or row["issued_at_unix"] > now
                     or grant.expires_at_unix <= now
+                    or (
+                        grant.principal_id is not None
+                        and not self._session_is_active(
+                            self._connection, grant.principal_id, grant.session_id, now
+                        )
+                    )
                 ):
                     self._connection.commit()
                     return None
@@ -420,6 +472,15 @@ class SQLiteApprovalStore:
                     or row["consumed_at_unix"] is not None
                     or row["revoked_at_unix"] is not None
                     or stored_grant.expires_at_unix <= now
+                    or (
+                        stored_grant.principal_id is not None
+                        and not self._session_is_active(
+                            self._connection,
+                            stored_grant.principal_id,
+                            stored_grant.session_id,
+                            now,
+                        )
+                    )
                 ):
                     self._connection.rollback()
                     return False
