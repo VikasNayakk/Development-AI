@@ -71,7 +71,14 @@ def _resolve_data_file(root: Path, relative_path: object, suffixes: set[str]) ->
     supplied = Path(relative_path)
     if supplied.is_absolute() or windows_path.is_absolute() or windows_path.drive:
         raise ValueError("Absolute paths are not allowed; choose a file inside the data directory.")
-    data_root = (root / "data").resolve()
+    declared_data_root = root / "data"
+    if declared_data_root.is_symlink():
+        raise ValueError("The project's data directory cannot be a symlink.")
+    data_root = declared_data_root.resolve()
+    try:
+        data_root.relative_to(root.resolve())
+    except ValueError as error:
+        raise ValueError("The project's data directory must remain inside the repository.") from error
     candidate = (data_root / supplied).resolve()
     try:
         candidate.relative_to(data_root)
@@ -296,7 +303,14 @@ class LocalJobManager:
     def list_jobs(self) -> list[dict]:
         with self._lock:
             jobs = sorted(self._jobs.values(), key=lambda item: item["created_at"], reverse=True)
-            return [self._public_job(job) for job in jobs[:20]]
+            summary_keys = (
+                "id", "kind", "status", "created_at", "finished_at",
+                "step", "target_steps", "return_code", "error",
+            )
+            return [
+                {key: job[key] for key in summary_keys}
+                for job in jobs[:20]
+            ]
 
     @staticmethod
     def _public_job(job: dict) -> dict:
@@ -426,6 +440,14 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
             self.send_header("Content-Length", str(len(encoded)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self'; style-src 'self'; "
+                "connect-src 'self'; img-src 'self' data:; object-src 'none'; "
+                "base-uri 'none'; frame-ancestors 'none'",
+            )
             self.end_headers()
             self.wfile.write(encoded)
 
@@ -438,10 +460,14 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
             origin = self.headers.get("Origin")
             if origin:
                 parsed_origin = urlsplit(origin)
+                try:
+                    origin_port = parsed_origin.port
+                except ValueError:
+                    origin_port = -1
                 if (
                     parsed_origin.scheme != "http"
                     or parsed_origin.hostname not in {"127.0.0.1", "localhost"}
-                    or parsed_origin.port not in {None, self.server.server_address[1]}
+                    or origin_port not in {None, self.server.server_address[1]}
                 ):
                     self._send_json(403, {"error": "Cross-origin requests are not allowed."})
                     return False
@@ -509,6 +535,14 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
             self.send_header("Content-Length", str(len(content)))
             self.send_header("Cache-Control", "no-cache")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self'; style-src 'self'; "
+                "connect-src 'self'; img-src 'self' data:; object-src 'none'; "
+                "base-uri 'none'; frame-ancestors 'none'",
+            )
             self.end_headers()
             self.wfile.write(content)
 
