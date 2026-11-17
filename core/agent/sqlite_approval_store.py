@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import sqlite3
 import threading
 import time
