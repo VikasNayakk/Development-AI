@@ -17,7 +17,7 @@ The AI is intended to understand goals, discover tool capabilities, plan work, s
 - Local dataset preparation with explicit rights manifest, provenance hashes, conservative privacy filtering, normalization and exact deduplication.
 - Initial model-independent automation-agent foundation: versioned tool manifests, strict argument/output schemas, explicit registry, permission checks and scoped single-use approvals.
 - Process-local task state engine: validated dependency graphs, guarded step transitions, cancellation requests, revision checks and ordered events.
-- Initial SQLite task ledger: transactional task snapshots and append-only events, restart recovery, schema checks and cross-instance stale-write protection. Waiting task steps can retain an optional approval ID so the host can reload the matching active grant after restart; older snapshots remain compatible. It is not yet wired into the running server/agent runtime.
+- SQLite task ledger: transactional task snapshots and append-only events, restart recovery, schema checks, cross-instance stale-write protection and persisted approval references. It is used by the opt-in `AutomationRuntime` library, but is not wired into the default server.
 - SQLite approval-grant store: host-issued, exact-scope grants with argument digests, expiry, revocation and atomic single-use consumption. `ToolRegistry` connects it to the dispatcher through an injected approval-consumer callback.
 - Initial `AutomationRuntime`: combines durable task state, persisted approval references, restart-loadable grants and `ToolDispatcher`; persists step outcomes and marks interrupted running steps as uncertain instead of auto-retrying. It remains an opt-in library component, not a server/extension integration.
 
