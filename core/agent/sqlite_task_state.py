@@ -29,7 +29,7 @@ from .task_state import (
     TaskStatus,
 )
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _MAX_DATABASE_PATH_LENGTH = 4096
 
 
@@ -150,6 +150,10 @@ class SQLiteTaskStateStore:
                     """
                 )
                 connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+            elif version == 1:
+                # Version 2 adds optional tool-version pins to serialized steps.
+                # The reader keeps version-1 snapshots compatible through defaults.
+                connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
             connection.commit()
         except Exception:
             connection.rollback()
@@ -192,6 +196,8 @@ class SQLiteTaskStateStore:
                 "depends_on": list(step.plan.depends_on),
                 "tool_id": step.plan.tool_id,
                 "operation": step.plan.operation,
+                "tool_version": step.plan.tool_version,
+                "manifest_version": step.plan.manifest_version,
             },
             "status": step.status.value,
             "attempt": step.attempt,
@@ -266,6 +272,8 @@ class SQLiteTaskStateStore:
                     depends_on=tuple(plan_data["depends_on"]),
                     tool_id=plan_data["tool_id"],
                     operation=plan_data["operation"],
+                    tool_version=plan_data.get("tool_version"),
+                    manifest_version=plan_data.get("manifest_version", 1),
                 )
                 attempt = item["attempt"]
                 if type(attempt) is not int or attempt < 0:
