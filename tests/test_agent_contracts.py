@@ -360,10 +360,16 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         call = make_call(operation="submit_form")
         approval = self.make_approval(call)
         first = dispatcher.dispatch(
-            call, granted_permissions={"browser.read"}, approval=approval
+            call,
+            granted_permissions={"browser.read"},
+            approval=approval,
+            wall_clock=lambda: 100,
         )
         second = ToolDispatcher(registry).dispatch(
-            call, granted_permissions={"browser.read"}, approval=approval
+            call,
+            granted_permissions={"browser.read"},
+            approval=approval,
+            wall_clock=lambda: 100,
         )
         self.assertEqual(first.status, ResultStatus.SUCCESS)
         self.assertEqual(second.error_code, "approval_reused")
