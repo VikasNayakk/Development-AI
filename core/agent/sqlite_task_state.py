@@ -458,10 +458,19 @@ class SQLiteTaskStateStore:
     def list_tasks(self) -> tuple[TaskSnapshot, ...]:
         with self._lock:
             self._ensure_open()
-            rows = self._connection.execute(
-                "SELECT task_id FROM tasks ORDER BY task_id"
-            ).fetchall()
-            return tuple(self._load_task(row["task_id"]) for row in rows)
+            # Keep the ID query and every snapshot/event read on one SQLite
+            # snapshot so concurrent writers cannot produce a mixed-time list.
+            self._connection.execute("BEGIN")
+            try:
+                rows = self._connection.execute(
+                    "SELECT task_id FROM tasks ORDER BY task_id"
+                ).fetchall()
+                tasks = tuple(self._load_task(row["task_id"]) for row in rows)
+                self._connection.commit()
+                return tasks
+            except Exception:
+                self._connection.rollback()
+                raise
 
     def _mutate(self, task_id: str, method: str, *args, **kwargs) -> TaskSnapshot:
         with self._lock:
