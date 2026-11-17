@@ -302,15 +302,26 @@ class ToolCall:
     task_id: str
     step_id: str
     tool_id: str
+    tool_version: str
     operation: str
     arguments: Mapping[str, Any]
     manifest_version: int = 1
+    idempotency_key: str | None = None
 
     def __post_init__(self) -> None:
         for label in ("request_id", "task_id", "step_id", "tool_id", "operation"):
             value = getattr(self, label)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{label} is required.")
+        if not isinstance(self.tool_version, str) or not re.fullmatch(
+            r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
+            self.tool_version,
+        ):
+            raise ValueError("tool_version must use semantic versioning.")
+        if self.idempotency_key is not None and (
+            not isinstance(self.idempotency_key, str) or not self.idempotency_key.strip()
+        ):
+            raise ValueError("idempotency_key must be a non-empty string or None.")
         if type(self.manifest_version) is not int or self.manifest_version != 1:
             raise ValueError("Unsupported tool manifest version.")
         if not isinstance(self.arguments, Mapping):
@@ -327,20 +338,33 @@ class ApprovalGrant:
 
     approval_id: str
     request_id: str
+    task_id: str
+    step_id: str
     tool_id: str
+    tool_version: str
     operation: str
     arguments_sha256: str
+    idempotency_key: str | None
     expires_at_unix: float
     user_confirmed: bool
 
     def __post_init__(self) -> None:
         if any(not isinstance(value, str) or not value.strip() for value in (
-            self.approval_id, self.request_id, self.tool_id, self.operation,
-            self.arguments_sha256,
+            self.approval_id, self.request_id, self.task_id, self.step_id,
+            self.tool_id, self.tool_version, self.operation, self.arguments_sha256,
         )):
             raise ValueError("Approval grant identifiers and digest are required.")
         if not re.fullmatch(r"[0-9a-f]{64}", self.arguments_sha256):
             raise ValueError("Approval argument digest must be a SHA-256 hex value.")
+        if not re.fullmatch(
+            r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
+            self.tool_version,
+        ):
+            raise ValueError("Approval tool_version must use semantic versioning.")
+        if self.idempotency_key is not None and (
+            not isinstance(self.idempotency_key, str) or not self.idempotency_key.strip()
+        ):
+            raise ValueError("Approval idempotency_key must be non-empty or None.")
         if (
             isinstance(self.expires_at_unix, bool)
             or not isinstance(self.expires_at_unix, (int, float))
@@ -404,6 +428,8 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, ToolAdapter] = {}
         self._manifests: dict[str, ToolManifest] = {}
+        self._approval_lock = threading.Lock()
+        self._consumed_approval_ids: set[str] = set()
 
     def register(self, adapter: ToolAdapter) -> None:
         manifest = getattr(adapter, "manifest", None)
@@ -424,6 +450,14 @@ class ToolRegistry:
     def manifests(self) -> tuple[ToolManifest, ...]:
         return tuple(self._manifests[key] for key in sorted(self._manifests))
 
+    def consume_approval(self, approval_id: str) -> bool:
+        """Atomically consume an approval ID once within this registry process."""
+        with self._approval_lock:
+            if approval_id in self._consumed_approval_ids:
+                return False
+            self._consumed_approval_ids.add(approval_id)
+            return True
+
 
 class ToolDispatcher:
     """Validate, authorize and invoke a registered adapter.
@@ -436,8 +470,6 @@ class ToolDispatcher:
 
     def __init__(self, registry: ToolRegistry) -> None:
         self._registry = registry
-        self._approval_lock = threading.Lock()
-        self._consumed_approval_ids: set[str] = set()
 
     @staticmethod
     def _denied(code: str) -> ToolResult:
@@ -463,9 +495,11 @@ class ToolDispatcher:
                 task_id=call.task_id,
                 step_id=call.step_id,
                 tool_id=call.tool_id,
+                tool_version=call.tool_version,
                 operation=call.operation,
                 arguments=call.arguments,
                 manifest_version=call.manifest_version,
+                idempotency_key=call.idempotency_key,
             )
         except (TypeError, ValueError):
             return self._denied("invalid_call")
@@ -480,6 +514,8 @@ class ToolDispatcher:
             return self._denied("unknown_tool")
         if call.manifest_version != manifest.manifest_version:
             return self._denied("unsupported_manifest_version")
+        if call.tool_version != manifest.version:
+            return self._denied("tool_version_mismatch")
         operation = manifest.get_operation(call.operation)
         if operation is None:
             return self._denied("unknown_operation")
@@ -497,17 +533,19 @@ class ToolDispatcher:
                 return self._denied("approval_required")
             if (
                 approval.request_id != call.request_id
+                or approval.task_id != call.task_id
+                or approval.step_id != call.step_id
                 or approval.tool_id != call.tool_id
+                or approval.tool_version != call.tool_version
                 or approval.operation != call.operation
+                or approval.idempotency_key != call.idempotency_key
                 or approval.arguments_sha256 != arguments_digest(call.arguments)
             ):
                 return self._denied("approval_scope_mismatch")
             if approval.expires_at_unix <= wall_clock():
                 return self._denied("approval_expired")
-            with self._approval_lock:
-                if approval.approval_id in self._consumed_approval_ids:
-                    return self._denied("approval_reused")
-                self._consumed_approval_ids.add(approval.approval_id)
+            if not self._registry.consume_approval(approval.approval_id):
+                return self._denied("approval_reused")
 
         cancel_event = cancel_event or threading.Event()
         if cancel_event.is_set():
