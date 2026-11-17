@@ -293,11 +293,11 @@ class LocalHttpServerTests(unittest.TestCase):
                 client.settimeout(2)
                 client.sendall(
                     (
-                        f"POST /api/training HTTP/1.1\\r\\n"
-                        f"Host: 127.0.0.1:{port}\\r\\n"
-                        "Content-Type: application/json\\r\\n"
-                        "Content-Length: 10\\r\\n"
-                        "Connection: close\\r\\n\\r\\n"
+                        f"POST /api/training HTTP/1.1\r\n"
+                        f"Host: 127.0.0.1:{port}\r\n"
+                        "Content-Type: application/json\r\n"
+                        "Content-Length: 10\r\n"
+                        "Connection: close\r\n\r\n"
                         "{"
                     ).encode("ascii")
                 )
