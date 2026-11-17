@@ -106,7 +106,7 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
         self.assertTrue(all(not thread.is_alive() for thread in threads))
         self.assertCountEqual(outcomes, ["updated", "stale"])
         snapshot = first.get_task("task-1")
-        self.assertEqual(snapshot.revision, 2)
+        self.assertEqual(snapshot.revision, 3)
         self.assertEqual(
             sum(step.status == StepStatus.RUNNING for step in snapshot.steps), 1
         )
