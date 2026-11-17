@@ -152,7 +152,8 @@ The repository now contains an initial in-process foundation in `core.agent.cont
 - Permission checks and exact-payload approval grants for high-impact operations.
 - Single-use approval IDs, bounded adapter deadlines, cancellation context and normalized results.
 - Retryability is suppressed for operations declared non-idempotent.
-- Process-local task and plan state with dependency validation, guarded transitions, cancellation requests, approval-wait markers, revision checks and ordered in-memory events.
+- Process-local task and plan state with dependency validation, guarded transitions, cancellation requests, approval-wait markers, revision checks and ordered in-memory events. A step can retain an optional opaque approval ID reference; this reference does not authorize dispatch.
+- SQLite task snapshots persist that approval reference alongside the existing SQLite approval grant, allowing a host runtime to recover the matching active grant after restart. Older task snapshots without the field remain readable.
 - SQLite task persistence with atomic state/event writes, WAL mode, full synchronous commits, append-only event triggers, schema-version checks, restart recovery and cross-instance optimistic revision protection. This is a task ledger, not the application-wide audit service.
 - SQLite approval grants in `core.agent.sqlite_approval_store`: exact request/task/step/tool/version/operation binding, SHA-256 argument digest, bounded 15-minute lifetime, explicit-confirmation requirement, atomic single-use consumption and revocation. `ToolRegistry(approval_consumer=store.consume)` connects durable consumption to the existing dispatcher checks; storage errors fail closed. Raw arguments and credentials are not persisted.
 
