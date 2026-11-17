@@ -346,8 +346,10 @@ class LocalJobManager:
 def build_status(root: Path, jobs: LocalJobManager) -> dict:
     report = build_model_report()
     checkpoint_path = _resolve_artifact_file(root, "latest.pt")
+    resume_path = _resolve_artifact_file(root, "latest.resume.pt")
     checkpoint_info = {
         "exists": checkpoint_path.is_file(),
+        "resume_exists": resume_path.is_file(),
         "trained": False,
         "steps_completed": None,
         "best_validation_loss": None,
