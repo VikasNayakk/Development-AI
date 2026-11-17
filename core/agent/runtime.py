@@ -385,6 +385,8 @@ class AutomationRuntime:
                         idempotency_key=call.idempotency_key,
                         expires_at_unix=float(now) + float(lifetime_seconds),
                         user_confirmed=True,
+                        principal_id=identity.principal_id,
+                        session_id=identity.session_id,
                     )
                     self._approvals.issue(grant)
             try:
@@ -513,7 +515,8 @@ class AutomationRuntime:
 
         try:
             try:
-                result = self._dispatcher.dispatch(
+                self._assert_active_identity(identity)
+            result = self._dispatcher.dispatch(
                     call,
                     granted_permissions=granted_permissions,
                     approval=approval,
