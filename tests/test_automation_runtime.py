@@ -183,7 +183,7 @@ class AutomationRuntimeTests(unittest.TestCase):
             tool_id="browser.test", operation="read_page",
         ))
         call = make_call()
-        waiting = self.runtime.execute_step(call, granted_permissions={"browser.write"})
+        waiting = self.runtime.execute_step(call, granted_permissions={"browser.write"}, identity=IDENTITY)
         self.assertTrue(waiting.awaiting_approval)
         self.assertTrue(waiting.approval_id)
         grant = self.runtime.issue_approval(call, user_confirmed=True, identity=IDENTITY)
@@ -200,6 +200,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         result = self.runtime.execute_step(
             call,
             granted_permissions={"browser.write"},
+            identity=IDENTITY,
         )
         self.assertEqual(result.tool_result.status, ResultStatus.SUCCESS)
         self.assertEqual(result.task.get_step("step-1").status, StepStatus.SUCCEEDED)
@@ -208,6 +209,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         repeated = self.runtime.execute_step(
             call,
             granted_permissions={"browser.write"},
+            identity=IDENTITY,
             approval_id=approval_id,
         )
         self.assertEqual(repeated.tool_result.status, ResultStatus.DENIED)
@@ -221,13 +223,14 @@ class AutomationRuntimeTests(unittest.TestCase):
             tool_id="browser.test", operation="read_page",
         ))
         original = make_call()
-        self.runtime.execute_step(original, granted_permissions={"browser.write"})
-        grant = self.runtime.issue_approval(original, user_confirmed=True)
+        self.runtime.execute_step(original, granted_permissions={"browser.write"}, identity=IDENTITY)
+        grant = self.runtime.issue_approval(original, user_confirmed=True, identity=IDENTITY)
 
         altered = make_call(arguments={"url": "https://other.example"})
         mismatch = self.runtime.execute_step(
             altered,
             granted_permissions={"browser.write"},
+            identity=IDENTITY,
             approval_id=grant.approval_id,
         )
         self.assertTrue(mismatch.awaiting_approval)
@@ -237,6 +240,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         accepted = self.runtime.execute_step(
             original,
             granted_permissions={"browser.write"},
+            identity=IDENTITY,
             approval_id=grant.approval_id,
         )
         self.assertEqual(accepted.tool_result.status, ResultStatus.SUCCESS)
@@ -250,25 +254,27 @@ class AutomationRuntimeTests(unittest.TestCase):
             tool_id="browser.test", operation="read_page",
         ))
         call = make_call()
-        self.runtime.execute_step(call, granted_permissions={"browser.write"})
+        self.runtime.execute_step(call, granted_permissions={"browser.write"}, identity=IDENTITY)
         grant = self.runtime.issue_approval(
-            call, user_confirmed=True, lifetime_seconds=10
+            call, user_confirmed=True, lifetime_seconds=10,
+            identity=IDENTITY,
         )
         self.clock_value[0] = 200.0
 
         result = self.runtime.execute_step(
             call,
             granted_permissions={"browser.write"},
+            identity=IDENTITY,
             approval_id=grant.approval_id,
         )
         self.assertTrue(result.awaiting_approval)
         self.assertEqual(result.task.get_step("step-1").status, StepStatus.WAITING_APPROVAL)
         self.assertEqual(len(adapter.calls), 0)
 
-        replacement = self.runtime.issue_approval(call, user_confirmed=True)
+        replacement = self.runtime.issue_approval(call, user_confirmed=True, identity=IDENTITY)
         self.assertNotEqual(replacement.approval_id, grant.approval_id)
         self.assertEqual(
-            self.runtime.get_task("task-1").get_step("step-1").approval_id,
+            self.runtime.get_task("task-1", identity=IDENTITY).get_step("step-1").approval_id,
             replacement.approval_id,
         )
 
@@ -280,14 +286,15 @@ class AutomationRuntimeTests(unittest.TestCase):
             tool_id="browser.test", operation="read_page",
         ))
         call = make_call()
-        self.runtime.execute_step(call, granted_permissions={"browser.write"})
-        grant = self.runtime.issue_approval(call, user_confirmed=True)
+        self.runtime.execute_step(call, granted_permissions={"browser.write"}, identity=IDENTITY)
+        grant = self.runtime.issue_approval(call, user_confirmed=True, identity=IDENTITY)
         cancellation = threading.Event()
         cancellation.set()
 
         stopped = self.runtime.execute_step(
             call,
             granted_permissions={"browser.write"},
+            identity=IDENTITY,
             approval_id=grant.approval_id,
             cancel_event=cancellation,
         )
@@ -298,6 +305,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         accepted = self.runtime.execute_step(
             call,
             granted_permissions={"browser.write"},
+            identity=IDENTITY,
             approval_id=grant.approval_id,
         )
         self.assertEqual(accepted.tool_result.status, ResultStatus.SUCCESS)
@@ -329,7 +337,7 @@ class AutomationRuntimeTests(unittest.TestCase):
             ),
             PlanStep("step-3", "Run independent step.", tool_id="browser.test", operation="read_page"),
         )
-        result = self.runtime.execute_step(make_call(), granted_permissions={"browser.read"})
+        result = self.runtime.execute_step(make_call(), granted_permissions={"browser.read"}, identity=IDENTITY)
         self.assertEqual(result.task.get_step("step-1").status, StepStatus.FAILED)
         self.assertTrue(result.task.get_step("step-1").side_effects_may_have_occurred)
         self.assertEqual(result.task.get_step("step-2").status, StepStatus.BLOCKED)
@@ -356,7 +364,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         def run_step():
             try:
                 outcomes.append(self.runtime.execute_step(
-                    make_call(), granted_permissions={"browser.read"}
+                    make_call(, identity=IDENTITY), granted_permissions={"browser.read"}
                 ))
             except Exception as exc:
                 errors.append(exc)
@@ -405,6 +413,7 @@ class AutomationRuntimeTests(unittest.TestCase):
             self.runtime.execute_step(
                 make_call(),
                 granted_permissions={"browser.read"},
+                identity=IDENTITY,
                 identity=other_session,
             )
 
@@ -419,6 +428,7 @@ class AutomationRuntimeTests(unittest.TestCase):
             self.runtime.execute_step(
                 make_call(),
                 granted_permissions={"browser.read"},
+                identity=IDENTITY,
                 identity=IDENTITY,
             )
         self.assertEqual(len(adapter.calls), 0)
@@ -440,7 +450,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.register(on_execute=hold)
         self.create_task()
         worker = threading.Thread(target=lambda: self.runtime.execute_step(
-            make_call(), granted_permissions={"browser.read"}
+            make_call(, identity=IDENTITY), granted_permissions={"browser.read"}
         ))
         worker.start()
         self.assertTrue(started.wait(timeout=2))
