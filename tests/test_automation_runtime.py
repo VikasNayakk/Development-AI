@@ -364,7 +364,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         def run_step():
             try:
                 outcomes.append(self.runtime.execute_step(
-                    make_call(, identity=IDENTITY), granted_permissions={"browser.read"}
+                    make_call(), granted_permissions={"browser.read"}, identity=IDENTITY
                 ))
             except Exception as exc:
                 errors.append(exc)
@@ -413,7 +413,6 @@ class AutomationRuntimeTests(unittest.TestCase):
             self.runtime.execute_step(
                 make_call(),
                 granted_permissions={"browser.read"},
-                identity=IDENTITY,
                 identity=other_session,
             )
 
@@ -428,7 +427,6 @@ class AutomationRuntimeTests(unittest.TestCase):
             self.runtime.execute_step(
                 make_call(),
                 granted_permissions={"browser.read"},
-                identity=IDENTITY,
                 identity=IDENTITY,
             )
         self.assertEqual(len(adapter.calls), 0)
