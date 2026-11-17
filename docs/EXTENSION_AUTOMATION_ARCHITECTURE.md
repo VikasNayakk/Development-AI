@@ -153,9 +153,10 @@ The repository now contains an initial in-process foundation in `core.agent.cont
 - Single-use approval IDs, bounded adapter deadlines, cancellation context and normalized results.
 - Retryability is suppressed for operations declared non-idempotent.
 - Process-local task and plan state with dependency validation, guarded transitions, cancellation requests, approval-wait markers, revision checks and ordered in-memory events.
-- SQLite task persistence with atomic state/event writes, WAL mode, full synchronous commits, append-only event triggers, schema-version checks, restart recovery and cross-instance optimistic revision protection. This is a task ledger, not yet the durable approval-grant store or the application-wide audit service.
+- SQLite task persistence with atomic state/event writes, WAL mode, full synchronous commits, append-only event triggers, schema-version checks, restart recovery and cross-instance optimistic revision protection. This is a task ledger, not the application-wide audit service.
+- SQLite approval grants in `core.agent.sqlite_approval_store`: exact request/task/step/tool/version/operation binding, SHA-256 argument digest, bounded 15-minute lifetime, explicit-confirmation requirement, atomic single-use consumption and revocation. `ToolRegistry(approval_consumer=store.consume)` connects durable consumption to the existing dispatcher checks; storage errors fail closed. Raw arguments and credentials are not persisted.
 
-This is an initial contract/dispatch and process-local task-state foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, persistent approval-grant store, application-wide durable audit-log service, integrated server/dispatcher task recovery, multi-tool planner or end-to-end browser control. The SQLite task ledger is available as a library component but is not yet wired into the running application. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
+This is an initial contract/dispatch and process-local task-state foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, application-wide durable audit-log service, integrated server/dispatcher task recovery, multi-tool planner or end-to-end browser control. The persistent approval store and its dispatcher callback are opt-in library components, not yet connected to the default server runtime. The SQLite task ledger is available as a library component but is not yet wired into the running application. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
 
 This document defines the intended architecture and acceptance criteria; it is not evidence that the extension or external automation tools are already connected.
 
@@ -188,3 +189,32 @@ with SQLiteTaskStateStore("data/automation/tasks.sqlite3") as tasks:
     )
     print(task.revision)
 ```
+
+## SQLite approval grants (initial implementation)
+
+`SQLiteApprovalStore` persists user-confirmed `ApprovalGrant` records in SQLite. It is deliberately separate from task progress and is not a general audit-log service.
+
+- Only trusted host code may construct and issue a grant after an explicit user confirmation. Model output, page content and an adapter cannot create approval records.
+- A grant is bound to request, task, step, tool ID and version, operation, idempotency key and a SHA-256 digest of the exact arguments.
+- The store retains the digest and scope, not the raw argument object, cookies, credentials or page contents.
+- Grants expire within 15 minutes of issuance. Expiration is checked both when issuing and consuming.
+- `consume()` uses a SQLite `BEGIN IMMEDIATE` transaction, so two store instances/processes cannot both consume the same grant.
+- `revoke()` atomically invalidates an unused grant. A consumed or revoked grant is terminal; scope cannot be edited and rows cannot be deleted through the database API/triggers.
+- The approval store has its own metadata table rather than SQLite's database-wide `user_version`, so it can coexist in the same database file as the task ledger without sharing migration counters.
+- File-backed databases use WAL, full synchronous commits, bounded busy timeout and best-effort owner-only database-file permissions. Protect the parent directory and backups as sensitive local user data.
+- No grant-retention or deletion workflow is implemented. Define retention and secure disposal before production use.
+
+Connect it to the existing dispatcher through the host-created registry:
+
+```python
+from core.agent import SQLiteApprovalStore, ToolRegistry
+
+with SQLiteApprovalStore("data/automation/approvals.sqlite3") as approvals:
+    registry = ToolRegistry(approval_consumer=approvals.consume)
+    # Register adapters from trusted application code.
+    # After the user confirms the exact operation, host code calls:
+    # approvals.issue(approval_grant)
+    # ToolDispatcher consumes the matching grant immediately before dispatch.
+```
+
+The store is opt-in and is not currently wired into `core.server` or a browser extension. A process crash after a grant is consumed but before an adapter effect is known still requires adapter idempotency/reconciliation. Durable permission policy, identity/session binding and a broader audit service remain separate integration work.
