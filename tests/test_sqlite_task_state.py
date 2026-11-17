@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import tempfile
 import threading
@@ -10,6 +11,9 @@ from core.agent.sqlite_task_state import (
     TaskPersistenceError,
     TaskStoreIntegrityError,
 )
+
+from core.agent.sqlite_approval_store import SQLiteApprovalStore
+from core.agent.contracts import ApprovalGrant
 from core.agent.task_state import (
     PlanStep,
     StaleTaskRevisionError,
@@ -66,6 +70,72 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
             list(range(1, restored.revision + 1)),
         )
         self.assertEqual(restored.get_step("inspect").status, StepStatus.SUCCEEDED)
+
+    def test_approval_reference_survives_restart_with_its_durable_grant(self):
+        tasks = self.open_store()
+        tasks.create_task(
+            task_id="task-approval",
+            request_id="request-approval",
+            goal="Submit an explicitly approved form.",
+            steps=(
+                PlanStep(
+                    "submit",
+                    "Submit the reviewed form.",
+                    tool_id="browser.test",
+                    operation="submit_form",
+                ),
+            ),
+        )
+        approvals = SQLiteApprovalStore(self.path, clock=lambda: 100.0)
+        self.addCleanup(approvals.close)
+        grant = ApprovalGrant(
+            approval_id="opaque-random-approval-id",
+            request_id="request-approval",
+            task_id="task-approval",
+            step_id="submit",
+            tool_id="browser.test",
+            tool_version="1.0.0",
+            operation="submit_form",
+            arguments_sha256="a" * 64,
+            idempotency_key="submit-001",
+            expires_at_unix=200.0,
+            user_confirmed=True,
+        )
+        approvals.issue(grant)
+        waiting = tasks.require_approval(
+            "task-approval", "submit", approval_id=grant.approval_id
+        )
+        self.assertEqual(waiting.get_step("submit").status, StepStatus.WAITING_APPROVAL)
+        self.assertEqual(waiting.get_step("submit").approval_id, grant.approval_id)
+        tasks.close()
+        approvals.close()
+
+        reopened_tasks = SQLiteTaskStateStore(self.path, clock=lambda: 101.0)
+        self.addCleanup(reopened_tasks.close)
+        reopened_approvals = SQLiteApprovalStore(self.path, clock=lambda: 101.0)
+        self.addCleanup(reopened_approvals.close)
+        restored = reopened_tasks.get_task("task-approval")
+        restored_step = restored.get_step("submit")
+        self.assertEqual(restored_step.status, StepStatus.WAITING_APPROVAL)
+        self.assertEqual(restored_step.approval_id, grant.approval_id)
+        self.assertEqual(reopened_approvals.get(restored_step.approval_id), grant)
+
+    def test_legacy_snapshot_without_approval_reference_still_loads(self):
+        store = self.open_store()
+        original = self.create_task(store)
+        row = store._connection.execute(
+            "SELECT snapshot_json FROM tasks WHERE task_id = ?", ("task-1",)
+        ).fetchone()
+        payload = json.loads(row["snapshot_json"])
+        for step in payload["steps"]:
+            step.pop("approval_id", None)
+        store._connection.execute(
+            "UPDATE tasks SET snapshot_json = ? WHERE task_id = ?",
+            (json.dumps(payload, ensure_ascii=False, separators=(",", ":")), "task-1"),
+        )
+        restored = store.get_task("task-1")
+        self.assertEqual(restored, original)
+        self.assertIsNone(restored.get_step("inspect").approval_id)
 
     def test_two_store_instances_reject_stale_revision(self):
         first = self.open_store()
