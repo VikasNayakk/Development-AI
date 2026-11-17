@@ -118,12 +118,22 @@ class AutomationRuntime:
             raise RuntimeClosedError("Automation runtime is closed.")
 
     def register_session(
-        self, identity: RuntimeIdentity, *, expires_at_unix: float
+        self,
+        identity: RuntimeIdentity,
+        *,
+        credential: str,
+        client_id: str,
+        expires_at_unix: float,
     ) -> None:
-        """Register an authenticated session; call only from trusted host code."""
+        """Register a paired extension session; call only from trusted host code."""
         with self._lock:
             self._ensure_open()
-            self._sessions.issue(identity, expires_at_unix=expires_at_unix)
+            self._sessions.issue(
+                identity,
+                credential=credential,
+                client_id=client_id,
+                expires_at_unix=expires_at_unix,
+            )
 
     def revoke_session(self, identity: RuntimeIdentity) -> bool:
         """Revoke a session and immediately block subsequent runtime operations."""
