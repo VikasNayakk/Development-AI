@@ -44,6 +44,17 @@ class SQLiteSessionStoreTests(unittest.TestCase):
         self.addCleanup(reopened.close)
         self.assertTrue(reopened.is_active(self.identity))
 
+    def test_raw_bearer_credential_is_never_persisted(self):
+        self.issue()
+        row = self.store._connection.execute(
+            "SELECT client_id, credential_sha256 FROM agent_sessions WHERE session_id = ?",
+            (self.identity.session_id,),
+        ).fetchone()
+        self.assertEqual(row["client_id"], CLIENT_ID)
+        self.assertEqual(len(row["credential_sha256"]), 64)
+        self.assertNotEqual(row["credential_sha256"], CREDENTIAL)
+        self.assertNotIn(CREDENTIAL, tuple(row))
+
     def test_authenticates_only_matching_session_token_and_extension_id(self):
         self.issue()
         self.assertEqual(
