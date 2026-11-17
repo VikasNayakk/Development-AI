@@ -431,6 +431,22 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         self.assertEqual(failed.error_code, "adapter_error")
         self.assertNotIn("secret traceback", str(failed))
 
+    def test_adapter_reported_timeout_is_never_safe_to_retry_automatically(self):
+        adapter = FakeAdapter(result=ToolResult(
+            status=ResultStatus.TIMEOUT,
+            error_code="network_timeout",
+            retryable=True,
+            side_effects_may_have_occurred=False,
+        ))
+        registry = ToolRegistry()
+        registry.register(adapter)
+        result = ToolDispatcher(registry).dispatch(
+            self.call, granted_permissions={"browser.read"}
+        )
+        self.assertEqual(result.status, ResultStatus.TIMEOUT)
+        self.assertFalse(result.retryable)
+        self.assertTrue(result.side_effects_may_have_occurred)
+
     def test_late_adapter_return_is_timed_out_and_not_retryable_by_default(self):
         clock_values = iter((10.0, 16.0))
         result = self.dispatcher.dispatch(
