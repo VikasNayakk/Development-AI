@@ -150,6 +150,16 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
                 CHECK (revoked_at_unix IS NULL OR revoked_at_unix >= issued_at_unix),
                 CHECK (consumed_at_unix IS NULL OR revoked_at_unix IS NULL)
             );
+            INSERT INTO approval_grants (
+                approval_id, request_id, task_id, step_id, tool_id, tool_version,
+                operation, arguments_sha256, idempotency_key, expires_at_unix,
+                user_confirmed, issued_at_unix, consumed_at_unix, revoked_at_unix
+            ) VALUES (
+                'legacy-approval', 'request-1', 'task-1', 'step-1', 'browser.test',
+                '1.0.0', 'submit_form',
+                '0000000000000000000000000000000000000000000000000000000000000000',
+                'idem-1', 200.0, 1, 100.0, NULL, NULL
+            );
             CREATE TRIGGER approval_grants_scope_immutable
             BEFORE UPDATE OF approval_id, request_id, task_id, step_id, tool_id,
                 tool_version, operation, arguments_sha256, idempotency_key,
@@ -179,6 +189,10 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         }
         self.assertIn("principal_id", columns)
         self.assertIn("session_id", columns)
+        legacy_grant = migrated.get("legacy-approval")
+        self.assertIsNotNone(legacy_grant)
+        self.assertIsNone(legacy_grant.principal_id)
+        self.assertIsNone(legacy_grant.session_id)
         self.assertEqual(
             migrated._connection.execute(
                 "SELECT schema_version FROM approval_store_metadata WHERE singleton = 1"
