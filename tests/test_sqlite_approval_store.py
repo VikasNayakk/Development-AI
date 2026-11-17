@@ -116,6 +116,11 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
             store._connection.execute("SELECT 1 FROM approval_grants").fetchone()
         )
 
+    def test_approval_lifetime_is_bounded(self):
+        store = self.open_store(clock=lambda: 100.0)
+        with self.assertRaisesRegex(ValueError, "cannot exceed"):
+            store.issue(make_grant(expires=1001.0))
+
     def test_grant_survives_restart_and_dispatcher_consumes_it_once(self):
         original_store = self.open_store()
         call = make_call()
