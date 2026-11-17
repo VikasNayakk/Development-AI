@@ -543,6 +543,15 @@ class ToolDispatcher:
             return self._denied("invalid_arguments")
         if not operation.required_permissions.issubset(granted_permissions):
             return self._denied("missing_permission")
+
+        # Do not burn a single-use approval when the caller already cancelled.
+        cancel_event = cancel_event or threading.Event()
+        if cancel_event.is_set():
+            return ToolResult(
+                status=ResultStatus.CANCELLED,
+                error_code="cancelled_before_dispatch",
+            )
+
         if operation.requires_approval:
             if (
                 not isinstance(approval, ApprovalGrant)
@@ -575,9 +584,6 @@ class ToolDispatcher:
                 )
                 return self._denied(code)
 
-        cancel_event = cancel_event or threading.Event()
-        if cancel_event.is_set():
-            return ToolResult(status=ResultStatus.CANCELLED, error_code="cancelled_before_dispatch")
         context = ExecutionContext(
             request_id=call.request_id,
             task_id=call.task_id,
