@@ -202,6 +202,7 @@ class TaskStateStore:
     ) -> TaskSnapshot:
         with self._lock:
             task = self._current(task_id, expected_revision)
+            self._ensure_event_capacity(task, 2)
             if task.cancel_requested:
                 raise TaskStateError("A cancellation-requested task cannot start new steps.")
             step = self._step(task, step_id)
@@ -220,6 +221,7 @@ class TaskStateStore:
     ) -> TaskSnapshot:
         with self._lock:
             task = self._current(task_id, expected_revision)
+            self._ensure_event_capacity(task, 2)
             if task.cancel_requested:
                 raise TaskStateError("A cancellation-requested task cannot request approval.")
             step = self._step(task, step_id)
@@ -236,6 +238,7 @@ class TaskStateStore:
         """Record that approval was obtained; dispatcher must still validate its grant."""
         with self._lock:
             task = self._current(task_id, expected_revision)
+            self._ensure_event_capacity(task, 2)
             if task.cancel_requested:
                 raise TaskStateError("A cancellation-requested task cannot be approved.")
             step = self._step(task, step_id)
@@ -251,6 +254,7 @@ class TaskStateStore:
     ) -> TaskSnapshot:
         with self._lock:
             task = self._current(task_id, expected_revision)
+            self._ensure_event_capacity(task, 4)
             step = self._step(task, step_id)
             if step.status != StepStatus.WAITING_APPROVAL:
                 raise TaskStateError("Only steps waiting for approval can be denied.")
@@ -274,6 +278,7 @@ class TaskStateStore:
             raise ValueError("result_ref must be a non-empty reference of at most 512 characters.")
         with self._lock:
             task = self._current(task_id, expected_revision)
+            self._ensure_event_capacity(task, 2)
             step = self._step(task, step_id)
             if step.status != StepStatus.RUNNING:
                 raise TaskStateError("Only running steps can complete.")
@@ -295,6 +300,7 @@ class TaskStateStore:
         self._validate_error(error_code, side_effects_may_have_occurred)
         with self._lock:
             task = self._current(task_id, expected_revision)
+            self._ensure_event_capacity(task, 4)
             step = self._step(task, step_id)
             if step.status != StepStatus.RUNNING:
                 raise TaskStateError("Only running steps can fail.")
@@ -311,6 +317,7 @@ class TaskStateStore:
     ) -> TaskSnapshot:
         with self._lock:
             task = self._current(task_id, expected_revision)
+            self._ensure_event_capacity(task, 2)
             if task.status in {TaskStatus.SUCCEEDED, TaskStatus.PARTIAL,
                                TaskStatus.FAILED, TaskStatus.CANCELLED}:
                 raise TaskStateError("A terminal task cannot be cancelled.")
@@ -350,6 +357,13 @@ class TaskStateStore:
 
         for step_id in dependencies:
             visit(step_id)
+
+    @staticmethod
+    def _ensure_event_capacity(task: TaskSnapshot, required: int) -> None:
+        if len(task.events) + required > _MAX_EVENTS_PER_TASK:
+            raise TaskStateError(
+                "Task event limit would be exceeded; archive the task before continuing."
+            )
 
     def _current(self, task_id: str, expected_revision: int | None) -> TaskSnapshot:
         task = self.get_task(task_id)
