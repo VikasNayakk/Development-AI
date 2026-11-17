@@ -125,11 +125,15 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         original_store = self.open_store()
         call = make_call()
         grant = make_grant(call)
+        approval_id = grant.approval_id
         original_store.issue(grant)
+        grant = None
         original_store.close()
 
         reopened = SQLiteApprovalStore(self.path, clock=lambda: 101.0)
         self.addCleanup(reopened.close)
+        grant = reopened.get(approval_id)
+        self.assertIsNotNone(grant)
         adapter = FakeAdapter()
         registry = ToolRegistry(approval_consumer=reopened.consume)
         registry.register(adapter)
@@ -204,6 +208,7 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         store.issue(grant)
         self.assertTrue(store.revoke(grant.approval_id))
         self.assertFalse(store.revoke(grant.approval_id))
+        self.assertIsNone(store.get(grant.approval_id))
         self.assertFalse(store.consume(grant))
 
     def test_two_independent_connections_can_consume_only_once(self):
