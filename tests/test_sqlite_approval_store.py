@@ -117,7 +117,12 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         identity = RuntimeIdentity("owner-1", "session-1")
         sessions = SQLiteSessionStore(self.path, clock=lambda: 100.0)
         self.addCleanup(sessions.close)
-        sessions.issue(identity, expires_at_unix=200.0)
+        sessions.issue(
+            identity,
+            credential="session-token-" + ("x" * 40),
+            client_id="a" * 32,
+            expires_at_unix=200.0,
+        )
         grant = make_grant(identity=identity)
         store.issue(grant)
         self.assertEqual(store.get(grant.approval_id), grant)
