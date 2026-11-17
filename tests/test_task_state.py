@@ -1,5 +1,6 @@
 import threading
 import unittest
+from unittest.mock import patch
 
 from core.agent.task_state import (
     PlanStep,
@@ -172,6 +173,14 @@ class TaskLifecycleTests(unittest.TestCase):
         self.assertEqual(
             {step.status for step in snapshot.steps}, {StepStatus.RUNNING}
         )
+
+    def test_event_limit_rejects_transition_without_partial_state_mutation(self):
+        with patch("core.agent.task_state._MAX_EVENTS_PER_TASK", 1):
+            with self.assertRaises(TaskStateError):
+                self.store.start_step("task-1", "inspect")
+        snapshot = self.store.get_task("task-1")
+        self.assertEqual(snapshot.revision, self.task.revision)
+        self.assertEqual(snapshot.get_step("inspect").status, StepStatus.PENDING)
 
     def test_event_sequence_and_revisions_are_monotonic(self):
         snapshot = self.store.start_step("task-1", "inspect")
