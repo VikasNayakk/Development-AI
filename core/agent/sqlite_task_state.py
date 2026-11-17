@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -237,10 +238,17 @@ class SQLiteTaskStateStore:
             or event.revision != expected_sequence
             or not isinstance(event.event_type, str)
             or not event.event_type
-            or not isinstance(event.timestamp_unix, (int, float))
+            or type(event.timestamp_unix) not in (int, float)
             or not math.isfinite(event.timestamp_unix)
-            or (event.step_id is not None and not isinstance(event.step_id, str))
-            or (event.error_code is not None and not isinstance(event.error_code, str))
+            or (event.step_id is not None and (
+                not isinstance(event.step_id, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", event.step_id)
+            ))
+            or (event.error_code is not None and (
+                not isinstance(event.error_code, str)
+                or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,95}", event.error_code)
+            ))
+            or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", event.event_type)
         ):
             raise TaskStoreIntegrityError("Stored task event failed integrity checks.")
         return event
@@ -265,6 +273,17 @@ class SQLiteTaskStateStore:
                 may_have_effects = item["side_effects_may_have_occurred"]
                 if type(may_have_effects) is not bool:
                     raise ValueError("Invalid side-effect marker.")
+                result_ref = item["result_ref"]
+                error_code = item["error_code"]
+                if result_ref is not None and (
+                    not isinstance(result_ref, str) or not result_ref.strip() or len(result_ref) > 512
+                ):
+                    raise ValueError("Invalid result reference.")
+                if error_code is not None and (
+                    not isinstance(error_code, str)
+                    or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,95}", error_code)
+                ):
+                    raise ValueError("Invalid step error code.")
                 steps.append(
                     StepSnapshot(
                         plan=plan,
@@ -307,12 +326,13 @@ class SQLiteTaskStateStore:
             or task.revision < 1
             or task.revision != row["revision"]
             or len(task.events) != task.revision
+            or len(task.events) > 10_000
             or not task.events
             or task.events[-1].revision != task.revision
             or not isinstance(task.cancel_requested, bool)
-            or not isinstance(task.created_at_unix, (int, float))
+            or type(task.created_at_unix) not in (int, float)
             or not math.isfinite(task.created_at_unix)
-            or not isinstance(task.updated_at_unix, (int, float))
+            or type(task.updated_at_unix) not in (int, float)
             or not math.isfinite(task.updated_at_unix)
             or task.created_at_unix > task.updated_at_unix
             or row["created_at"] != task.created_at_unix
