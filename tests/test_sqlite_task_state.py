@@ -79,7 +79,15 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
 
     def test_concurrent_writers_cannot_overwrite_each_other(self):
         first = self.open_store()
-        created = self.create_task(first)
+        created = first.create_task(
+            task_id="task-1",
+            request_id="request-1",
+            goal="Start two independent actions concurrently.",
+            steps=(
+                PlanStep("inspect", "Inspect the selected page."),
+                PlanStep("prepare", "Prepare the requested change."),
+            ),
+        )
         second = self.open_store()
         barrier = threading.Barrier(2)
         outcomes = []
