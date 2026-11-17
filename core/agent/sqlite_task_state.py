@@ -277,7 +277,7 @@ class SQLiteTaskStateStore:
                     raise ValueError("Invalid attempt count.")
                 approval_id = item.get("approval_id")
                 if approval_id is not None:
-                    TaskStateStore._validate_identifier(approval_id, "approval_id")
+                    TaskStateStore._validate_approval_identifier(approval_id)
                 may_have_effects = item["side_effects_may_have_occurred"]
                 if type(may_have_effects) is not bool:
                     raise ValueError("Invalid side-effect marker.")
