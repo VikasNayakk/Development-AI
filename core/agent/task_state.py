@@ -86,6 +86,8 @@ class StepSnapshot:
     result_ref: str | None = None
     error_code: str | None = None
     side_effects_may_have_occurred: bool = False
+    # Opaque lookup reference only; the dispatcher must still validate the grant.
+    approval_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -217,8 +219,15 @@ class TaskStateStore:
             )
 
     def require_approval(
-        self, task_id: str, step_id: str, *, expected_revision: int | None = None
+        self,
+        task_id: str,
+        step_id: str,
+        *,
+        approval_id: str | None = None,
+        expected_revision: int | None = None,
     ) -> TaskSnapshot:
+        if approval_id is not None:
+            self._validate_identifier(approval_id, "approval_id")
         with self._lock:
             task = self._current(task_id, expected_revision)
             self._ensure_event_capacity(task, 2)
@@ -228,7 +237,12 @@ class TaskStateStore:
             if step.status != StepStatus.PENDING:
                 raise TaskStateError("Approval can only be requested for a pending step.")
             return self._replace_step(
-                task, replace(step, status=StepStatus.WAITING_APPROVAL),
+                task,
+                replace(
+                    step,
+                    status=StepStatus.WAITING_APPROVAL,
+                    approval_id=approval_id,
+                ),
                 "approval_requested", step_id,
             )
 
