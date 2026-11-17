@@ -56,7 +56,7 @@ Every adapter must publish a machine-readable capability manifest. At minimum, e
 - Timeout, cancellation support, retryability and idempotency behavior.
 - Availability/health and any rate or concurrency limits.
 
-A dispatched tool call must carry a unique request ID, task/plan/step IDs, tool ID and exact tool version, operation ID, manifest schema version, validated arguments, an adapter-enforced deadline and an idempotency key when supported. An approval grant is bound to the exact request, task, step, tool/version, operation, arguments digest and idempotency key; approval IDs are single-use within the host registry. The initial in-process implementation applies a 256 KiB JSON payload limit and a 300-second maximum operation deadline. Authorization material must be an opaque reference handled by the adapter/host; secrets and raw credentials must never be inserted into model prompts or committed to the repository.
+A dispatched tool call must carry a unique request ID, task/plan/step IDs, tool ID and exact tool version, operation ID, manifest schema version, validated arguments, an adapter-enforced deadline and an idempotency key when supported. An approval grant is bound to the exact principal, extension session, request, task, step, tool/version, operation, arguments digest and idempotency key; approval IDs are single-use within the host registry. The initial in-process implementation applies a 256 KiB JSON payload limit and a 300-second maximum operation deadline. Authorization material must be an opaque reference handled by the adapter/host; secrets and raw credentials must never be inserted into model prompts or committed to the repository.
 
 A normalized result must distinguish at least: `success`, `partial`, `failed`, `denied`, `timeout` and `cancelled`. It should include typed output, changed-resource references, structured error code, retryability and any known side effects. Do not convert a denied or timed-out operation into a success-shaped response.
 
@@ -155,7 +155,8 @@ The repository now contains an initial in-process foundation in `core.agent.cont
 - Process-local task and plan state with dependency validation, guarded transitions, cancellation requests, approval-wait markers, revision checks and ordered in-memory events. A step can retain an optional opaque approval ID reference; this reference does not authorize dispatch.
 - SQLite task snapshots persist that approval reference alongside the existing SQLite approval grant, allowing a host runtime to recover the matching active grant after restart. Older task snapshots without the field remain readable.
 - SQLite task persistence with atomic state/event writes, WAL mode, full synchronous commits, append-only event triggers, schema-version checks, restart recovery and cross-instance optimistic revision protection. This is a task ledger, not the application-wide audit service.
-- SQLite approval grants in `core.agent.sqlite_approval_store`: exact request/task/step/tool/version/operation binding, SHA-256 argument digest, bounded 15-minute lifetime, explicit-confirmation requirement, atomic single-use consumption and revocation. `ToolRegistry(approval_consumer=store.consume)` connects durable consumption to the existing dispatcher checks; storage errors fail closed. Raw arguments and credentials are not persisted.
+- SQLite approval grants in `core.agent.sqlite_approval_store`: exact principal/session/request/task/step/tool/version/operation binding, SHA-256 argument digest, bounded 15-minute lifetime, explicit-confirmation requirement, atomic single-use consumption and revocation. Bound grants are checked against the active session registry in the same SQLite transaction used to issue/read/consume them; a revoked or expired session cannot use a pending grant. Raw arguments and credentials are not persisted.
+- `SQLiteSessionStore` persists host-registered principal/session pairs with a maximum 24-hour lifetime, irreversible revocation and restart recovery. Session IDs are opaque database keys, never bearer credentials. `AutomationRuntime` checks the active session and exact task owner on task creation, retrieval, approval, execution and cancellation.
 
 This is an initial contract/dispatch and process-local task-state foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, application-wide durable audit-log service, integrated server/dispatcher task recovery, multi-tool planner or end-to-end browser control. The persistent approval store and its dispatcher callback are opt-in library components, not yet connected to the default server runtime. The SQLite task ledger is available as a library component but is not yet wired into the running application. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
 
@@ -197,7 +198,7 @@ with SQLiteTaskStateStore("data/automation/tasks.sqlite3") as tasks:
 
 - Only trusted host code may construct and issue a grant after an explicit user confirmation. Model output, page content and an adapter cannot create approval records.
 - Host code must generate an opaque, cryptographically random approval ID (for example, from a secure random token generator); do not use sequential/predictable IDs or expose the ID as a bearer credential through an extension/web API.
-- User/principal and extension-session binding are not yet part of this grant schema. Add and validate that identity scope before exposing durable approvals through an authenticated extension transport.
+- Schema version 2 adds nullable `principal_id` and `session_id` scope columns. Version 1 databases migrate in place; legacy grants remain explicitly unbound and cannot authorize an identity-bound `AutomationRuntime` task. Direct `ToolDispatcher` use remains a trusted internal API; do not expose it to untrusted clients.
 - A grant is bound to request, task, step, tool ID and version, operation, idempotency key and a SHA-256 digest of the exact arguments.
 - The store retains the digest and scope, not the raw argument object, cookies, credentials or page contents.
 - Grants expire within 15 minutes of issuance. Expiration is checked both when issuing and consuming.
@@ -225,31 +226,42 @@ The store is opt-in and is not currently wired into `core.server` or a browser e
 
 ## AutomationRuntime (initial library integration)
 
-`AutomationRuntime` is the first durable orchestration facade joining `SQLiteTaskStateStore`, `SQLiteApprovalStore`, `ToolRegistry` and `ToolDispatcher` in `core.agent.runtime`. It is a library component; it does not add an HTTP endpoint, browser-extension transport, autonomous planner or default server integration.
+`AutomationRuntime` is the first durable orchestration facade joining `SQLiteTaskStateStore`, `SQLiteApprovalStore`, `SQLiteSessionStore`, `ToolRegistry` and `ToolDispatcher` in `core.agent.runtime`. It is a library component; it does not add an HTTP endpoint, browser-extension transport, autonomous planner or default server integration.
 
-- Constructing the runtime opens both ledgers against the same SQLite file. The task store retains its own `user_version`; the approval store uses its separate metadata table.
+- Constructing the runtime opens the task, approval and session ledgers against the same SQLite file. The task store retains its own `user_version`; the approval and session stores use separate metadata tables.
 - Adapters are registered only by trusted host code through `register_adapter()`. Plans and model output cannot register or directly execute a tool.
 - Every runtime plan step must bind a `tool_id` and operation. The call must match the task request ID and that exact step binding.
+- The host supplies a `RuntimeIdentity` on task creation, task retrieval, approval issuance, execution and cancellation. It must be created only after the host authenticates the extension session. The identity is bound to the task snapshot and approval grant; a different principal or extension session cannot read or operate that task.
+- The host registers each authenticated session using `register_session(identity, expires_at_unix=...)`. Sessions expire within 24 hours and can be irreversibly revoked with `revoke_session(identity)`. A revoked or expired session cannot create/read tasks, issue approvals or dispatch steps. Session registration is a trusted-host API, not an authentication mechanism or network endpoint.
 - The host supplies the permission set on every `execute_step()` call. The runtime does not infer, persist or expand permissions.
 - Missing approval for an approval-required operation moves the step to `WAITING_APPROVAL` and persists a cryptographically random opaque approval reference in the task snapshot; no adapter is called. The reference is a lookup handle, not execution permission.
-- Trusted host code may call `issue_approval(call, user_confirmed=True)` only after explicit user consent. The runtime creates the durable grant for the reference already attached to the step, or rotates the reference if its earlier grant is expired, revoked or consumed. Grant lifetime is capped at 15 minutes.
+- Trusted host code may call `issue_approval(call, user_confirmed=True, identity=identity)` only after explicit user consent for the exact operation and arguments. The grant is bound to the same principal and session as its task. The runtime creates the durable grant for the reference already attached to the step, or rotates the reference if its earlier grant is expired, revoked or consumed. Grant lifetime is capped at 15 minutes.
 - On execution, the runtime recovers the approval ID from the persisted task step when the caller omits it, reloads the active grant from SQLite and still sends it through `ToolDispatcher`. Dispatcher validation and atomic single-use consumption remain mandatory; `approve_step()` alone never authorizes an operation.
 - Step start and final result are persisted. Successful tool output is returned to the caller but is not copied into task history. A failed step blocks its dependents; failure results preserve the adapter's side-effect uncertainty flag.
-- `cancel_task()` records the cancellation request and signals active step events. The dispatcher checks cancellation before consuming approval and again before adapter entry; adapters must still cooperate with cancellation/deadlines.
+- `get_task()` and `cancel_task()` both require the same active identity that owns the task. `cancel_task()` records the cancellation request and signals active step events. The dispatcher checks cancellation before consuming approval and again before adapter entry; adapters must still cooperate with cancellation/deadlines.
 - `recover_interrupted_tasks(exclusive_startup=True)` is explicit and never retries. Call it only when the host can guarantee that no other process/runtime is executing against the same database. Any persisted `RUNNING` step is marked failed with `side_effects_may_have_occurred=True`, because a crash cannot prove whether an external effect happened.
 - `close()` refuses to close while synchronous adapter calls are active; signal/cancel and wait for those calls to finish before closing both stores.
 
 Minimal shape:
 
 ```python
-from core.agent import AutomationRuntime, PlanStep, ToolCall
+import secrets
+import time
+from core.agent import AutomationRuntime, PlanStep, ToolCall, RuntimeIdentity
 
+identity = RuntimeIdentity(
+    principal_id="owner-opaque-id",
+    session_id=secrets.token_urlsafe(32),
+)
 with AutomationRuntime("data/automation/automation.sqlite3") as runtime:
+    # Call only after the host has authenticated this extension session.
+    runtime.register_session(identity, expires_at_unix=time.time() + 3600)
     runtime.register_adapter(trusted_adapter)
     runtime.create_task(
         task_id="task-001",
         request_id="request-001",
         goal="Read the selected page.",
+        identity=identity,
         steps=(
             PlanStep(
                 "read", "Read the selected page.",
@@ -267,10 +279,10 @@ with AutomationRuntime("data/automation/automation.sqlite3") as runtime:
         arguments={"url": "https://example.test"},
     )
     result = runtime.execute_step(
-        call, granted_permissions={"browser.read"}
+        call, granted_permissions={"browser.read"}, identity=identity
     )
 ```
 
 For approval-required operations, the first `execute_step()` returns `awaiting_approval=True` and an opaque `approval_id`; that reference is also persisted in the task snapshot. Only after the user confirms the exact operation may trusted host code call `issue_approval(call, user_confirmed=True)`. On restart, the host can call `execute_step()` without an approval ID; the runtime reloads the reference from the task and the active grant from SQLite.
 
-This layer does not yet provide principal/user/session binding, approval UX, capability discovery by a model, multi-step planning, cross-process runtime ownership/leases, an application-wide audit service or an authenticated extension bridge. Do not expose it to extension/web callers until identity/session binding, origin checks, replay protection, request authentication, message limits and host permission policy are implemented. External side effects still require adapter-level idempotency and reconciliation.
+This layer does not yet provide an authenticated extension identity provider, approval UX that displays the exact operation/target/side effects, capability discovery by a model, multi-step planning, cross-process runtime ownership/leases, an application-wide audit service or an authenticated extension bridge. The runtime identity API assumes the caller is trusted host code; it does not authenticate a browser or webpage by itself. Do not expose it to extension/web callers until identity/session binding, origin checks, replay protection, request authentication, message limits and host permission policy are implemented. External side effects still require adapter-level idempotency and reconciliation.
