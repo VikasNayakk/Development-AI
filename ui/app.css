@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family="Segoe UI":wght@400;500;600;700;800&display=swap');
 
 :root {
   color-scheme: light;
@@ -20,7 +20,7 @@
   --red: #c24b5a;
   --red-soft: #fff0f1;
   --shadow: 0 10px 30px rgba(30, 43, 75, .045);
-  font-family: "DM Sans", "Segoe UI", sans-serif;
+  font-family: "Segoe UI", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -33,7 +33,7 @@ a { color: inherit; text-decoration: none; }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 246px minmax(0, 1fr); }
 .sidebar { background: var(--sidebar); color: #f6f7fb; padding: 27px 17px 18px; display: flex; flex-direction: column; min-height: 100vh; position: sticky; top: 0; height: 100vh; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 10px 34px; }
-.brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 43px; height: 43px; border-radius: 13px; background: linear-gradient(145deg, #8178f2, #514ac1); color: #fff; font: 800 14px Manrope, sans-serif; letter-spacing: -.7px; box-shadow: 0 8px 22px rgba(89, 81, 213, .28); }
+.brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 43px; height: 43px; border-radius: 13px; background: linear-gradient(145deg, #8178f2, #514ac1); color: #fff; font: 800 14px "Segoe UI", Arial, sans-serif; letter-spacing: -.7px; box-shadow: 0 8px 22px rgba(89, 81, 213, .28); }
 .brand-mark span { color: #c2bfff; padding: 0 1px; }
 .brand-copy { display: flex; flex-direction: column; gap: 3px; }
 .brand-copy strong { font: 700 14px Manrope, sans-serif; letter-spacing: -.25px; }
