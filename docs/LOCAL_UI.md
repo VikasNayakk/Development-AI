@@ -75,7 +75,7 @@ The browser interface talks only to the local server:
 | POST | `/api/evaluation` | Start a local held-out evaluation process |
 | POST | `/api/jobs/{id}/stop` | Request cancellation of a running process |
 
-JSON request bodies are size-limited. At most one training/evaluation subprocess is active at a time. Commands are launched as argument arrays with `shell=False`; shell command strings are never constructed from browser input.
+JSON request bodies are size-limited. The local HTTP server handles at most 16 concurrent request workers by default; excess requests receive HTTP 503 and can be retried. Incomplete or idle socket I/O is bounded by a 15-second request timeout. At most one training/evaluation subprocess is active at a time. Commands are launched as argument arrays with `shell=False`; shell command strings are never constructed from browser input.
 
 ## Privacy and security boundaries
 
