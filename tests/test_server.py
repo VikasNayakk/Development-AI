@@ -237,6 +237,63 @@ class LocalHttpServerTests(unittest.TestCase):
         self.assertNotIn("fonts.googleapis.com", css)
         self.assertNotIn("cdn.jsdelivr.net", html + javascript + css)
 
+    def test_server_bounds_concurrent_http_requests(self):
+        server = create_server("127.0.0.1", 0, max_http_threads=1, request_timeout=2)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        entered = threading.Event()
+        release = threading.Event()
+        first_response = []
+
+        def slow_status(*args):
+            entered.set()
+            release.wait(timeout=3)
+            return {"status": "ok"}
+
+        def request_status():
+            try:
+                with urlopen(
+                    f"http://127.0.0.1:{server.server_address[1]}/api/status",
+                    timeout=3,
+                ) as response:
+                    first_response.append(response.status)
+            except Exception as error:
+                first_response.append(error)
+
+        thread.start()
+        request_thread = threading.Thread(target=request_status, daemon=True)
+        try:
+            with patch("core.server.build_status", side_effect=slow_status):
+                request_thread.start()
+                self.assertTrue(entered.wait(timeout=2), "first request did not enter handler")
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(
+                        f"http://127.0.0.1:{server.server_address[1]}/api/health",
+                        timeout=2,
+                    )
+                self.assertEqual(raised.exception.code, 503)
+                self.assertIn("server is busy", raised.exception.read().decode("utf-8").lower())
+                release.set()
+                request_thread.join(timeout=3)
+                self.assertFalse(request_thread.is_alive())
+                self.assertEqual(first_response, [200])
+        finally:
+            release.set()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
+    def test_server_worker_and_timeout_limits_are_validated(self):
+        with self.assertRaisesRegex(ValueError, "max_http_threads"):
+            create_server("127.0.0.1", 0, max_http_threads=0)
+        with self.assertRaisesRegex(ValueError, "request_timeout"):
+            create_server("127.0.0.1", 0, request_timeout=0)
+        server = create_server("127.0.0.1", 0, max_http_threads=2, request_timeout=4)
+        try:
+            self.assertEqual(server.max_http_threads, 2)
+            self.assertEqual(server.request_timeout_seconds, 4.0)
+        finally:
+            server.server_close()
+
     def test_server_refuses_non_loopback_binding(self):
         with self.assertRaisesRegex(ValueError, "loopback-only"):
             create_server("0.0.0.0", 0)
