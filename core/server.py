@@ -715,6 +715,8 @@ def create_server(
                         self._send_json(404, {"error": str(error)})
                     return
                 self._send_json(404, {"error": "API route not found."})
+            except TimeoutError:
+                self._send_json(408, {"error": "Request body was not received before the request timeout."})
             except (ValueError, RuntimeError) as error:
                 self._send_json(400, {"error": str(error)})
             except (OSError, RuntimeError, TypeError, KeyError, ValueError) as error:
