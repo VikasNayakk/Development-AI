@@ -2,6 +2,7 @@
 
 from .contracts import (
     ApprovalGrant,
+    RuntimeIdentity,
     ExecutionContext,
     ResultStatus,
     RiskLevel,
@@ -18,6 +19,11 @@ from .sqlite_approval_store import (
     ApprovalStoreError,
     ApprovalStoreIntegrityError,
     SQLiteApprovalStore,
+)
+from .sqlite_session_store import (
+    SQLiteSessionStore,
+    SessionStoreError,
+    SessionStoreIntegrityError,
 )
 from .sqlite_task_state import (
     SQLiteTaskStateStore,
@@ -46,7 +52,7 @@ from .runtime import (
 )
 
 __all__ = [
-    "ApprovalGrant", "ExecutionContext", "ResultStatus", "RiskLevel",
+    "ApprovalGrant", "RuntimeIdentity", "ExecutionContext", "ResultStatus", "RiskLevel",
     "SideEffect", "ToolCall", "ToolDispatcher", "ToolManifest",
     "ToolOperation", "ToolRegistry", "ToolResult", "validate_json_value",
     "PlanStep", "StaleTaskRevisionError", "StepSnapshot", "StepStatus",
@@ -54,6 +60,7 @@ __all__ = [
     "TaskStateStore", "TaskStatus", "SQLiteTaskStateStore",
     "TaskPersistenceError", "TaskStoreIntegrityError", "SQLiteApprovalStore",
     "ApprovalStoreError", "ApprovalStoreIntegrityError",
+    "SQLiteSessionStore", "SessionStoreError", "SessionStoreIntegrityError",
     "AutomationRuntime", "RuntimeStepResult", "RuntimeBusyError",
     "RuntimeClosedError", "RuntimeRecoveryError",
 ]

@@ -17,6 +17,7 @@ from typing import Callable, Iterable
 
 from .contracts import (
     ApprovalGrant,
+    RuntimeIdentity,
     ResultStatus,
     ToolAdapter,
     ToolCall,
@@ -28,6 +29,7 @@ from .contracts import (
 )
 from .sqlite_approval_store import SQLiteApprovalStore
 from .sqlite_task_state import SQLiteTaskStateStore
+from .sqlite_session_store import SQLiteSessionStore
 from .task_state import (
     PlanStep,
     StaleTaskRevisionError,
@@ -100,7 +102,12 @@ class AutomationRuntime:
             self._approvals = SQLiteApprovalStore(
                 database_path, clock=clock, timeout_seconds=timeout_seconds
             )
+            self._sessions = SQLiteSessionStore(
+                database_path, clock=clock, timeout_seconds=timeout_seconds
+            )
         except Exception:
+            if hasattr(self, "_approvals"):
+                self._approvals.close()
             self._tasks.close()
             raise
         self._registry = ToolRegistry(approval_consumer=self._approvals.consume)
@@ -109,6 +116,31 @@ class AutomationRuntime:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeClosedError("Automation runtime is closed.")
+
+    def register_session(
+        self, identity: RuntimeIdentity, *, expires_at_unix: float
+    ) -> None:
+        """Register an authenticated session; call only from trusted host code."""
+        with self._lock:
+            self._ensure_open()
+            self._sessions.issue(identity, expires_at_unix=expires_at_unix)
+
+    def revoke_session(self, identity: RuntimeIdentity) -> bool:
+        """Revoke a session and immediately block subsequent runtime operations."""
+        with self._lock:
+            self._ensure_open()
+            return self._sessions.revoke(identity)
+
+    def _assert_active_identity(self, identity: RuntimeIdentity) -> None:
+        if not isinstance(identity, RuntimeIdentity):
+            raise PermissionError("An authenticated runtime identity is required.")
+        if not self._sessions.is_active(identity):
+            raise PermissionError("The runtime identity session is unknown, expired or revoked.")
+
+    @staticmethod
+    def _assert_task_owner(task: TaskSnapshot, identity: RuntimeIdentity) -> None:
+        if task.principal_id != identity.principal_id or task.session_id != identity.session_id:
+            raise PermissionError("The task belongs to a different principal or extension session.")
 
     def register_adapter(self, adapter: ToolAdapter) -> None:
         """Register an adapter from trusted host code, never from model output."""
@@ -129,6 +161,7 @@ class AutomationRuntime:
         request_id: str,
         goal: str,
         steps: Iterable[PlanStep],
+        identity: RuntimeIdentity,
     ) -> TaskSnapshot:
         plan = tuple(steps)
         if any(
@@ -142,17 +175,23 @@ class AutomationRuntime:
             )
         with self._lock:
             self._ensure_open()
+            self._assert_active_identity(identity)
             return self._tasks.create_task(
                 task_id=task_id,
                 request_id=request_id,
                 goal=goal,
                 steps=plan,
+                principal_id=identity.principal_id,
+                session_id=identity.session_id,
             )
 
-    def get_task(self, task_id: str) -> TaskSnapshot:
+    def get_task(self, task_id: str, *, identity: RuntimeIdentity) -> TaskSnapshot:
         with self._lock:
             self._ensure_open()
-            return self._tasks.get_task(task_id)
+            self._assert_active_identity(identity)
+            task = self._tasks.get_task(task_id)
+            self._assert_task_owner(task, identity)
+            return task
 
     def _resolve_call(
         self, call: ToolCall
@@ -183,7 +222,9 @@ class AutomationRuntime:
         return task, operation, None
 
     @staticmethod
-    def _grant_matches_call(grant: ApprovalGrant, call: ToolCall) -> bool:
+    def _grant_matches_call(
+        grant: ApprovalGrant, call: ToolCall, identity: RuntimeIdentity
+    ) -> bool:
         return (
             grant.request_id == call.request_id
             and grant.task_id == call.task_id
@@ -194,6 +235,8 @@ class AutomationRuntime:
             and grant.idempotency_key == call.idempotency_key
             and grant.arguments_sha256 == arguments_digest(call.arguments)
             and grant.user_confirmed is True
+            and grant.principal_id == identity.principal_id
+            and grant.session_id == identity.session_id
         )
 
     @staticmethod
@@ -235,6 +278,7 @@ class AutomationRuntime:
         call: ToolCall,
         *,
         user_confirmed: bool,
+        identity: RuntimeIdentity,
         lifetime_seconds: float = 300.0,
     ) -> ApprovalGrant:
         """Issue a cryptographically random grant after a trusted host confirms.
@@ -260,7 +304,9 @@ class AutomationRuntime:
 
         with self._lock:
             self._ensure_open()
+            self._assert_active_identity(identity)
             task, operation, error = self._resolve_call(call)
+            self._assert_task_owner(task, identity)
             if error is not None:
                 raise ValueError(error)
             if not operation.requires_approval:
@@ -285,7 +331,7 @@ class AutomationRuntime:
                     expected_revision=task.revision,
                 )
             existing = self._approvals.get(approval_id)
-            if existing is not None and self._grant_matches_call(existing, call):
+            if existing is not None and self._grant_matches_call(existing, call, identity):
                 grant = existing
             else:
                 if existing is not None:
@@ -309,6 +355,8 @@ class AutomationRuntime:
                     idempotency_key=call.idempotency_key,
                     expires_at_unix=float(now) + float(lifetime_seconds),
                     user_confirmed=True,
+                    principal_id=identity.principal_id,
+                    session_id=identity.session_id,
                 )
                 try:
                     self._approvals.issue(grant)
@@ -337,6 +385,8 @@ class AutomationRuntime:
                         idempotency_key=call.idempotency_key,
                         expires_at_unix=float(now) + float(lifetime_seconds),
                         user_confirmed=True,
+                        principal_id=identity.principal_id,
+                        session_id=identity.session_id,
                     )
                     self._approvals.issue(grant)
             try:
@@ -364,6 +414,7 @@ class AutomationRuntime:
         call: ToolCall,
         *,
         granted_permissions: frozenset[str] | set[str],
+        identity: RuntimeIdentity,
         approval_id: str | None = None,
         cancel_event: threading.Event | None = None,
     ) -> RuntimeStepResult:
@@ -377,7 +428,9 @@ class AutomationRuntime:
 
         with self._lock:
             self._ensure_open()
+            self._assert_active_identity(identity)
             task, operation, error = self._resolve_call(call)
+            self._assert_task_owner(task, identity)
             if error is not None:
                 return self._denied(task, error)
             if task.cancel_requested:
@@ -434,7 +487,7 @@ class AutomationRuntime:
                     return self._await_approval(
                         task, call.step_id, "approval_required"
                     )
-                if not self._grant_matches_call(approval, call):
+                if not self._grant_matches_call(approval, call, identity):
                     return self._await_approval(
                         task, call.step_id, "approval_scope_mismatch"
                     )
@@ -462,21 +515,31 @@ class AutomationRuntime:
 
         try:
             try:
-                result = self._dispatcher.dispatch(
-                    call,
-                    granted_permissions=granted_permissions,
-                    approval=approval,
-                    cancel_event=event,
-                    wall_clock=self._clock,
-                )
+                self._assert_active_identity(identity)
             except Exception:
-                # An unexpected dispatcher exception is conservatively uncertain:
-                # do not infer that an adapter had no external side effects.
+                # The session gate failed before adapter entry; no external effect ran.
                 result = ToolResult(
-                    status=ResultStatus.FAILED,
-                    error_code="runtime_dispatch_error",
-                    side_effects_may_have_occurred=True,
+                    status=ResultStatus.DENIED,
+                    error_code="session_unavailable",
+                    side_effects_may_have_occurred=False,
                 )
+            else:
+                try:
+                    result = self._dispatcher.dispatch(
+                        call,
+                        granted_permissions=granted_permissions,
+                        approval=approval,
+                        cancel_event=event,
+                        wall_clock=self._clock,
+                    )
+                except Exception:
+                    # An unexpected dispatcher exception is conservatively uncertain:
+                    # do not infer that an adapter had no external side effects.
+                    result = ToolResult(
+                        status=ResultStatus.FAILED,
+                        error_code="runtime_dispatch_error",
+                        side_effects_may_have_occurred=True,
+                    )
 
             latest = self._tasks.get_task(call.task_id)
             if result.status == ResultStatus.SUCCESS:
@@ -514,11 +577,13 @@ class AutomationRuntime:
             with self._lock:
                 self._active.pop(active_key, None)
 
-    def cancel_task(self, task_id: str) -> TaskSnapshot:
+    def cancel_task(self, task_id: str, *, identity: RuntimeIdentity) -> TaskSnapshot:
         """Persist a cancellation request and signal all active steps for the task."""
         with self._lock:
             self._ensure_open()
+            self._assert_active_identity(identity)
             task = self._tasks.get_task(task_id)
+            self._assert_task_owner(task, identity)
             updated = self._tasks.cancel_task(
                 task_id, expected_revision=task.revision
             )
@@ -569,6 +634,7 @@ class AutomationRuntime:
                 raise RuntimeBusyError(
                     "Active steps were signalled to stop; wait for them to finish before closing."
                 )
+            self._sessions.close()
             self._approvals.close()
             self._tasks.close()
             self._closed = True

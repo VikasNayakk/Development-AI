@@ -127,6 +127,8 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
             "SELECT snapshot_json FROM tasks WHERE task_id = ?", ("task-1",)
         ).fetchone()
         payload = json.loads(row["snapshot_json"])
+        payload.pop("principal_id", None)
+        payload.pop("session_id", None)
         for step in payload["steps"]:
             step.pop("approval_id", None)
         store._connection.execute(

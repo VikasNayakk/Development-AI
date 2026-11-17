@@ -120,6 +120,18 @@ class TaskSnapshot:
     cancel_requested: bool
     steps: tuple[StepSnapshot, ...]
     events: tuple[TaskEvent, ...]
+    principal_id: str | None = None
+    session_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.principal_id is None) != (self.session_id is None):
+            raise ValueError("Task principal_id and session_id must be set together.")
+        if self.principal_id is not None:
+            pattern = r"[A-Za-z0-9_-][A-Za-z0-9_.:@/-]{0,127}"
+            if not isinstance(self.principal_id, str) or not re.fullmatch(pattern, self.principal_id):
+                raise ValueError("Task principal_id is invalid.")
+            if not isinstance(self.session_id, str) or not re.fullmatch(pattern, self.session_id):
+                raise ValueError("Task session_id is invalid.")
 
     def get_step(self, step_id: str) -> StepSnapshot | None:
         return next((step for step in self.steps if step.plan.step_id == step_id), None)
@@ -156,9 +168,19 @@ class TaskStateStore:
         request_id: str,
         goal: str,
         steps: Iterable[PlanStep],
+        principal_id: str | None = None,
+        session_id: str | None = None,
     ) -> TaskSnapshot:
         self._validate_identifier(task_id, "task_id")
         self._validate_identifier(request_id, "request_id")
+        if (principal_id is None) != (session_id is None):
+            raise ValueError("principal_id and session_id must be set together.")
+        if principal_id is not None:
+            pattern = r"[A-Za-z0-9_-][A-Za-z0-9_.:@/-]{0,127}"
+            if not isinstance(principal_id, str) or not re.fullmatch(pattern, principal_id):
+                raise ValueError("principal_id is invalid.")
+            if not isinstance(session_id, str) or not re.fullmatch(pattern, session_id):
+                raise ValueError("session_id is invalid.")
         if not isinstance(goal, str) or not goal.strip() or len(goal) > 20_000:
             raise ValueError("goal must be non-empty and at most 20,000 characters.")
         plan = tuple(steps)
@@ -192,6 +214,8 @@ class TaskStateStore:
                 cancel_requested=False,
                 steps=tuple(StepSnapshot(step) for step in plan),
                 events=(event,),
+                principal_id=principal_id,
+                session_id=session_id,
             )
             self._tasks[task_id] = snapshot
             return snapshot

@@ -333,6 +333,21 @@ class ToolCall:
 
 
 @dataclass(frozen=True)
+class RuntimeIdentity:
+    """Authenticated owner and extension-session identity injected by trusted host code."""
+
+    principal_id: str
+    session_id: str
+
+    def __post_init__(self) -> None:
+        pattern = r"[A-Za-z0-9_-][A-Za-z0-9_.:@/-]{0,127}"
+        if not isinstance(self.principal_id, str) or not re.fullmatch(pattern, self.principal_id):
+            raise ValueError("principal_id must be a stable identifier (1-128 characters).")
+        if not isinstance(self.session_id, str) or not re.fullmatch(pattern, self.session_id):
+            raise ValueError("session_id must be a stable identifier (1-128 characters).")
+
+
+@dataclass(frozen=True)
 class ApprovalGrant:
     """Host-created record of a user's approval for one exact operation payload."""
 
@@ -347,8 +362,14 @@ class ApprovalGrant:
     idempotency_key: str | None
     expires_at_unix: float
     user_confirmed: bool
+    principal_id: str | None = None
+    session_id: str | None = None
 
     def __post_init__(self) -> None:
+        if (self.principal_id is None) != (self.session_id is None):
+            raise ValueError("Approval principal_id and session_id must be set together.")
+        if self.principal_id is not None:
+            RuntimeIdentity(self.principal_id, self.session_id)
         if any(not isinstance(value, str) or not value.strip() for value in (
             self.approval_id, self.request_id, self.task_id, self.step_id,
             self.tool_id, self.tool_version, self.operation, self.arguments_sha256,

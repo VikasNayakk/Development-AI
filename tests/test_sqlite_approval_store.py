@@ -6,6 +6,7 @@ from pathlib import Path
 
 from core.agent import (
     ApprovalGrant,
+    RuntimeIdentity,
     ResultStatus,
     RiskLevel,
     SideEffect,
@@ -18,6 +19,7 @@ from core.agent import (
     PlanStep,
     SQLiteTaskStateStore,
     SQLiteApprovalStore,
+    SQLiteSessionStore,
     ApprovalStoreError,
     ApprovalStoreIntegrityError,
 )
@@ -53,7 +55,7 @@ def make_call(**overrides):
     return ToolCall(**values)
 
 
-def make_grant(call=None, *, approval_id="approval-1", expires=200.0, confirmed=True):
+def make_grant(call=None, *, approval_id="approval-1", expires=200.0, confirmed=True, identity=None):
     call = call or make_call()
     return ApprovalGrant(
         approval_id=approval_id,
@@ -67,6 +69,8 @@ def make_grant(call=None, *, approval_id="approval-1", expires=200.0, confirmed=
         idempotency_key=call.idempotency_key,
         expires_at_unix=expires,
         user_confirmed=confirmed,
+        principal_id=None if identity is None else identity.principal_id,
+        session_id=None if identity is None else identity.session_id,
     )
 
 
@@ -107,6 +111,116 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         store = SQLiteApprovalStore(self.path, clock=clock)
         self.addCleanup(store.close)
         return store
+
+    def test_identity_binding_is_persisted_and_part_of_approval_scope(self):
+        store = self.open_store()
+        identity = RuntimeIdentity("owner-1", "session-1")
+        sessions = SQLiteSessionStore(self.path, clock=lambda: 100.0)
+        self.addCleanup(sessions.close)
+        sessions.issue(identity, expires_at_unix=200.0)
+        grant = make_grant(identity=identity)
+        store.issue(grant)
+        self.assertEqual(store.get(grant.approval_id), grant)
+
+        wrong_session = make_grant(identity=RuntimeIdentity("owner-1", "session-2"))
+        self.assertFalse(store.consume(wrong_session))
+        self.assertTrue(store.consume(grant))
+
+    def test_revoked_session_invalidates_bound_approval_before_consumption(self):
+        store = self.open_store()
+        sessions = SQLiteSessionStore(self.path, clock=lambda: 100.0)
+        self.addCleanup(sessions.close)
+        identity = RuntimeIdentity("owner-1", "session-revoked")
+        sessions.issue(identity, expires_at_unix=200.0)
+        grant = make_grant(identity=identity, approval_id="revoked-session-grant")
+        store.issue(grant)
+
+        self.assertTrue(sessions.revoke(identity))
+        self.assertIsNone(store.get(grant.approval_id))
+        self.assertFalse(store.consume(grant))
+        row = store._connection.execute(
+            "SELECT consumed_at_unix FROM approval_grants WHERE approval_id = ?",
+            (grant.approval_id,),
+        ).fetchone()
+        self.assertIsNone(row["consumed_at_unix"])
+
+    def test_schema_v1_migrates_to_identity_columns_without_rebinding_old_grants(self):
+        connection = sqlite3.connect(self.path)
+        connection.executescript("""
+            CREATE TABLE approval_store_metadata (
+                singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                schema_version INTEGER NOT NULL CHECK (schema_version >= 1)
+            );
+            INSERT INTO approval_store_metadata(singleton, schema_version) VALUES (1, 1);
+            CREATE TABLE approval_grants (
+                approval_id TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                step_id TEXT NOT NULL,
+                tool_id TEXT NOT NULL,
+                tool_version TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                arguments_sha256 TEXT NOT NULL CHECK (length(arguments_sha256) = 64),
+                idempotency_key TEXT,
+                expires_at_unix REAL NOT NULL,
+                user_confirmed INTEGER NOT NULL CHECK (user_confirmed = 1),
+                issued_at_unix REAL NOT NULL,
+                consumed_at_unix REAL,
+                revoked_at_unix REAL,
+                CHECK (expires_at_unix > issued_at_unix),
+                CHECK (consumed_at_unix IS NULL OR consumed_at_unix >= issued_at_unix),
+                CHECK (revoked_at_unix IS NULL OR revoked_at_unix >= issued_at_unix),
+                CHECK (consumed_at_unix IS NULL OR revoked_at_unix IS NULL)
+            );
+            INSERT INTO approval_grants (
+                approval_id, request_id, task_id, step_id, tool_id, tool_version,
+                operation, arguments_sha256, idempotency_key, expires_at_unix,
+                user_confirmed, issued_at_unix, consumed_at_unix, revoked_at_unix
+            ) VALUES (
+                'legacy-approval', 'request-1', 'task-1', 'step-1', 'browser.test',
+                '1.0.0', 'submit_form',
+                '0000000000000000000000000000000000000000000000000000000000000000',
+                'idem-1', 200.0, 1, 100.0, NULL, NULL
+            );
+            CREATE TRIGGER approval_grants_scope_immutable
+            BEFORE UPDATE OF approval_id, request_id, task_id, step_id, tool_id,
+                tool_version, operation, arguments_sha256, idempotency_key,
+                expires_at_unix, user_confirmed, issued_at_unix
+            ON approval_grants BEGIN
+                SELECT RAISE(ABORT, 'approval grant scope is immutable');
+            END;
+            CREATE TRIGGER approval_grants_terminal_once
+            BEFORE UPDATE OF consumed_at_unix, revoked_at_unix ON approval_grants
+            WHEN OLD.consumed_at_unix IS NOT NULL OR OLD.revoked_at_unix IS NOT NULL
+              OR (NEW.consumed_at_unix IS NULL AND NEW.revoked_at_unix IS NULL)
+              OR (NEW.consumed_at_unix IS NOT NULL AND NEW.revoked_at_unix IS NOT NULL)
+            BEGIN SELECT RAISE(ABORT, 'approval grant is already terminal'); END;
+            CREATE TRIGGER approval_grants_no_delete
+            BEFORE DELETE ON approval_grants BEGIN
+                SELECT RAISE(ABORT, 'approval grants cannot be deleted');
+            END;
+        """)
+        connection.commit()
+        connection.close()
+
+        migrated = SQLiteApprovalStore(self.path, clock=lambda: 100.0)
+        self.addCleanup(migrated.close)
+        columns = {
+            row["name"]
+            for row in migrated._connection.execute("PRAGMA table_info(approval_grants)")
+        }
+        self.assertIn("principal_id", columns)
+        self.assertIn("session_id", columns)
+        legacy_grant = migrated.get("legacy-approval")
+        self.assertIsNotNone(legacy_grant)
+        self.assertIsNone(legacy_grant.principal_id)
+        self.assertIsNone(legacy_grant.session_id)
+        self.assertEqual(
+            migrated._connection.execute(
+                "SELECT schema_version FROM approval_store_metadata WHERE singleton = 1"
+            ).fetchone()["schema_version"],
+            2,
+        )
 
     def test_issues_only_explicitly_confirmed_unexpired_grants(self):
         store = self.open_store()
