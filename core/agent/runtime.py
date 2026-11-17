@@ -467,6 +467,7 @@ class AutomationRuntime:
                     granted_permissions=granted_permissions,
                     approval=approval,
                     cancel_event=event,
+                    wall_clock=self._clock,
                 )
             except Exception:
                 # An unexpected dispatcher exception is conservatively uncertain:
