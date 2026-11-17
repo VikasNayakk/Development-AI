@@ -62,42 +62,45 @@ def run_inference_benchmark(
     if type(seed) is not int or not 0 <= seed <= (2**64) - 1:
         raise ValueError("seed must be an integer between 0 and 2^64 - 1.")
 
-    torch.manual_seed(seed)
-    if device.type == "cuda":
-        torch.cuda.manual_seed_all(seed)
+    # Isolate benchmark RNG use so calling this utility does not perturb a caller's
+    # training, sampling, or test random-number streams.
+    cuda_devices = [device.index if device.index is not None else torch.cuda.current_device()] if device.type == "cuda" else []
+    with torch.random.fork_rng(devices=cuda_devices):
+        torch.manual_seed(seed)
+        if device.type == "cuda":
+            torch.cuda.manual_seed_all(seed)
+        model = DevelopmentAIModel(config).to(device)
+        model.eval()
+        prompt = torch.randint(
+            0, config.vocab_size, (batch_size, prompt_tokens),
+            dtype=torch.long, device=device,
+        )
 
-    model = DevelopmentAIModel(config).to(device)
-    model.eval()
-    prompt = torch.randint(
-        0, config.vocab_size, (batch_size, prompt_tokens),
-        dtype=torch.long, device=device,
-    )
+        def generate_once():
+            with torch.inference_mode():
+                return model.generate(prompt, generation_tokens, do_sample=False)
 
-    def generate_once():
-        with torch.inference_mode():
-            return model.generate(prompt, generation_tokens, do_sample=False)
-
-    for _ in range(warmup_runs):
-        generate_once()
-    _synchronize(device)
-    if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
-
-    durations = []
-    generated_token_count = 0
-    for _ in range(measured_runs):
+        for _ in range(warmup_runs):
+            generate_once()
         _synchronize(device)
-        started = time.perf_counter()
-        output = generate_once()
-        _synchronize(device)
-        elapsed = time.perf_counter() - started
-        if not math.isfinite(elapsed) or elapsed <= 0:
-            raise RuntimeError("Inference benchmark measured a non-positive duration.")
-        actual_new_tokens = int(output.shape[1] - prompt_tokens)
-        if actual_new_tokens != generation_tokens:
-            raise RuntimeError("Model generated an unexpected number of tokens.")
-        durations.append(elapsed)
-        generated_token_count += actual_new_tokens * batch_size
+        if device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(device)
+
+        durations = []
+        generated_token_count = 0
+        for _ in range(measured_runs):
+            _synchronize(device)
+            started = time.perf_counter()
+            output = generate_once()
+            _synchronize(device)
+            elapsed = time.perf_counter() - started
+            if not math.isfinite(elapsed) or elapsed <= 0:
+                raise RuntimeError("Inference benchmark measured a non-positive duration.")
+            actual_new_tokens = int(output.shape[1] - prompt_tokens)
+            if actual_new_tokens != generation_tokens:
+                raise RuntimeError("Model generated an unexpected number of tokens.")
+            durations.append(elapsed)
+            generated_token_count += actual_new_tokens * batch_size
 
     total_seconds = sum(durations)
     parameter_count = sum(parameter.numel() for parameter in model.parameters())
@@ -118,6 +121,7 @@ def run_inference_benchmark(
             "pytorch": torch.__version__,
             "device_type": device.type,
             "device_name": device_name,
+            "cpu_thread_count": torch.get_num_threads(),
         },
         "model": {
             "config": config.to_dict(),
