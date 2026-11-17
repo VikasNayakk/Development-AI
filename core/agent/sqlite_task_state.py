@@ -453,7 +453,15 @@ class SQLiteTaskStateStore:
     def get_task(self, task_id: str) -> TaskSnapshot:
         with self._lock:
             self._ensure_open()
-            return self._load_task(task_id)
+            # Read the snapshot row and its event history from one SQLite view.
+            self._connection.execute("BEGIN")
+            try:
+                task = self._load_task(task_id)
+                self._connection.commit()
+                return task
+            except Exception:
+                self._connection.rollback()
+                raise
 
     def list_tasks(self) -> tuple[TaskSnapshot, ...]:
         with self._lock:
