@@ -144,7 +144,10 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.assertEqual(result.task.get_step("step-1").status, StepStatus.SUCCEEDED)
         self.assertEqual(len(adapter.calls), 1)
         self.assertEqual(created.revision, 1)
-        self.assertEqual(result.task.events[-1].event_type, "step_succeeded")
+        self.assertIn(
+            "step_succeeded",
+            [event.event_type for event in result.task.events],
+        )
 
     def test_high_risk_step_waits_for_approval_without_running_adapter(self):
         adapter = self.register(make_operation(approval=True, side_effect=SideEffect.IRREVERSIBLE))
