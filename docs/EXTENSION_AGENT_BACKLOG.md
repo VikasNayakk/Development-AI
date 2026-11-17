@@ -42,7 +42,7 @@ The following are foundations, not proof that the full product is complete:
 
 ### AI-1 — Identity, trust and authorization scope
 
-**Implementation status:** backend identity binding and durable session expiry/revocation are implemented on feature branch `feature/principal-session-binding`; authenticated extension identity sourcing and approval confirmation UX remain pending CI/review.
+**Implementation status:** backend principal/session binding, durable expiry/revocation and approval invalidation are merged to `main` (PR #25, merge commit `d9b996429e0c14b76899c75d7361c63c2e0b12d5`). Authenticated extension identity sourcing, owner identity provisioning and approval confirmation UX remain pending.
 
 - [ ] Define a stable owner/principal identity source and its trust boundary.
 - [ ] Define extension installation identity and per-browser session identity; do not treat a tab ID or conversation ID as a user identity.
