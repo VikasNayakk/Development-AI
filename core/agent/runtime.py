@@ -516,21 +516,30 @@ class AutomationRuntime:
         try:
             try:
                 self._assert_active_identity(identity)
-                result = self._dispatcher.dispatch(
-                    call,
-                    granted_permissions=granted_permissions,
-                    approval=approval,
-                    cancel_event=event,
-                    wall_clock=self._clock,
-                )
             except Exception:
-                # An unexpected dispatcher exception is conservatively uncertain:
-                # do not infer that an adapter had no external side effects.
+                # The session gate failed before adapter entry; no external effect ran.
                 result = ToolResult(
-                    status=ResultStatus.FAILED,
-                    error_code="runtime_dispatch_error",
-                    side_effects_may_have_occurred=True,
+                    status=ResultStatus.DENIED,
+                    error_code="session_unavailable",
+                    side_effects_may_have_occurred=False,
                 )
+            else:
+                try:
+                    result = self._dispatcher.dispatch(
+                        call,
+                        granted_permissions=granted_permissions,
+                        approval=approval,
+                        cancel_event=event,
+                        wall_clock=self._clock,
+                    )
+                except Exception:
+                    # An unexpected dispatcher exception is conservatively uncertain:
+                    # do not infer that an adapter had no external side effects.
+                    result = ToolResult(
+                        status=ResultStatus.FAILED,
+                        error_code="runtime_dispatch_error",
+                        side_effects_may_have_occurred=True,
+                    )
 
             latest = self._tasks.get_task(call.task_id)
             if result.status == ResultStatus.SUCCESS:
