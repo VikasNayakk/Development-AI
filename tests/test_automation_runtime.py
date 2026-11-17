@@ -448,7 +448,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.register(on_execute=hold)
         self.create_task()
         worker = threading.Thread(target=lambda: self.runtime.execute_step(
-            make_call(, identity=IDENTITY), granted_permissions={"browser.read"}
+            make_call(), granted_permissions={"browser.read"}, identity=IDENTITY
         ))
         worker.start()
         self.assertTrue(started.wait(timeout=2))
