@@ -19,7 +19,7 @@ from typing import Callable
 
 from .contracts import RuntimeIdentity
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _MAX_DATABASE_PATH_LENGTH = 4096
 _MAX_SESSION_TTL_SECONDS = 24 * 60 * 60
 
@@ -157,6 +157,20 @@ class SQLiteSessionStore:
                     """
                 )
                 connection.execute(
+                    """
+                    CREATE TABLE agent_bridge_request_ids (
+                        session_id TEXT NOT NULL,
+                        request_id TEXT NOT NULL,
+                        received_at_unix REAL NOT NULL,
+                        PRIMARY KEY (session_id, request_id),
+                        FOREIGN KEY (session_id) REFERENCES agent_sessions(session_id)
+                    )
+                    """
+                )
+                connection.execute(
+                    "CREATE INDEX agent_bridge_request_ids_received_idx ON agent_bridge_request_ids(received_at_unix)"
+                )
+                connection.execute(
                     "INSERT INTO agent_session_store_metadata(singleton, schema_version) VALUES (1, ?)",
                     (_SCHEMA_VERSION,),
                 )
@@ -164,10 +178,6 @@ class SQLiteSessionStore:
                 if version == 1:
                     connection.execute("ALTER TABLE agent_sessions ADD COLUMN client_id TEXT")
                     connection.execute("ALTER TABLE agent_sessions ADD COLUMN credential_sha256 TEXT")
-                    connection.execute(
-                        "UPDATE agent_session_store_metadata SET schema_version = ? WHERE singleton = 1",
-                        (_SCHEMA_VERSION,),
-                    )
                     connection.execute("DROP TRIGGER agent_sessions_scope_immutable")
                     connection.execute(
                         """
@@ -179,6 +189,25 @@ class SQLiteSessionStore:
                             SELECT RAISE(ABORT, 'session identity and lifetime are immutable');
                         END
                         """
+                    )
+                if version in {1, 2}:
+                    connection.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS agent_bridge_request_ids (
+                            session_id TEXT NOT NULL,
+                            request_id TEXT NOT NULL,
+                            received_at_unix REAL NOT NULL,
+                            PRIMARY KEY (session_id, request_id),
+                            FOREIGN KEY (session_id) REFERENCES agent_sessions(session_id)
+                        )
+                        """
+                    )
+                    connection.execute(
+                        "CREATE INDEX IF NOT EXISTS agent_bridge_request_ids_received_idx ON agent_bridge_request_ids(received_at_unix)"
+                    )
+                    connection.execute(
+                        "UPDATE agent_session_store_metadata SET schema_version = ? WHERE singleton = 1",
+                        (_SCHEMA_VERSION,),
                     )
                 columns = {
                     row["name"]
@@ -204,7 +233,17 @@ class SQLiteSessionStore:
                     "agent_sessions_revoke_once",
                     "agent_sessions_no_delete",
                 }
-                if not required_columns.issubset(columns) or not required_triggers.issubset(triggers):
+                tables = {
+                    row["name"]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    ).fetchall()
+                }
+                if (
+                    not required_columns.issubset(columns)
+                    or not required_triggers.issubset(triggers)
+                    or "agent_bridge_request_ids" not in tables
+                ):
                     raise SessionStoreIntegrityError("Session database schema is incomplete.")
             connection.commit()
         except Exception:
@@ -400,6 +439,87 @@ class SQLiteSessionStore:
                 )
                 self._connection.commit()
                 return identity
+            except Exception:
+                self._connection.rollback()
+                raise
+
+    def consume_request_id(
+        self,
+        identity: RuntimeIdentity,
+        *,
+        client_id: str,
+        request_id: str,
+        timestamp_unix: float,
+    ) -> bool:
+        """Durably reject duplicate or stale authenticated bridge requests."""
+        if not isinstance(identity, RuntimeIdentity):
+            return False
+        if not isinstance(client_id, str) or not re.fullmatch(r"[a-p]{32}", client_id):
+            return False
+        if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", request_id):
+            return False
+        if (
+            isinstance(timestamp_unix, bool)
+            or not isinstance(timestamp_unix, (int, float))
+            or not math.isfinite(timestamp_unix)
+        ):
+            return False
+        with self._lock:
+            self._ensure_open()
+            try:
+                self._connection.execute("BEGIN IMMEDIATE")
+                now = self._now()
+                if abs(now - float(timestamp_unix)) > 60.0:
+                    self._connection.rollback()
+                    return False
+                row = self._connection.execute(
+                    "SELECT * FROM agent_sessions WHERE session_id = ?",
+                    (identity.session_id,),
+                ).fetchone()
+                if row is None:
+                    self._connection.rollback()
+                    return False
+                issued_at = row["issued_at_unix"]
+                expires_at = row["expires_at_unix"]
+                revoked_at = row["revoked_at_unix"]
+                digest = row["credential_sha256"]
+                if (
+                    row["principal_id"] != identity.principal_id
+                    or row["client_id"] != client_id
+                    or not isinstance(digest, str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                    or type(issued_at) not in (int, float)
+                    or not math.isfinite(issued_at)
+                    or type(expires_at) not in (int, float)
+                    or not math.isfinite(expires_at)
+                    or expires_at <= now
+                    or issued_at > now
+                    or revoked_at is not None
+                ):
+                    self._connection.rollback()
+                    return False
+                # Old timestamps are rejected above, so request IDs older than
+                # two timestamp windows can be safely pruned.
+                self._connection.execute(
+                    "DELETE FROM agent_bridge_request_ids WHERE received_at_unix < ?",
+                    (now - 120.0,),
+                )
+                self._connection.execute(
+                    """
+                    INSERT INTO agent_bridge_request_ids (
+                        session_id, request_id, received_at_unix
+                    ) VALUES (?, ?, ?)
+                    """,
+                    (identity.session_id, request_id, now),
+                )
+                self._connection.commit()
+                return True
+            except sqlite3.IntegrityError:
+                self._connection.rollback()
+                return False
+            except sqlite3.Error as exc:
+                self._connection.rollback()
+                raise SessionStoreError("Could not record bridge request ID.") from exc
             except Exception:
                 self._connection.rollback()
                 raise
