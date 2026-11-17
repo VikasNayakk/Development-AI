@@ -57,7 +57,7 @@ def _bounded_float(payload: dict, key: str, default: float, minimum: float, maxi
 
 
 def _validate_device(value: object) -> str:
-    if value not in {"cpu", "cuda"}:
+    if not isinstance(value, str) or value not in {"cpu", "cuda"}:
         raise ValueError("device must be either 'cpu' or 'cuda'.")
     if value == "cuda" and not torch.cuda.is_available():
         raise ValueError("CUDA was requested, but CUDA is not available on this computer.")
@@ -113,7 +113,7 @@ def build_training_command(root: Path, payload: dict) -> list[str]:
         )
 
     command = [
-        sys.executable, "-m", "core.train",
+        sys.executable, "-u", "-m", "core.train",
         "--data", str(data_path),
         "--steps", str(steps),
         "--batch-size", str(batch_size),
@@ -142,7 +142,7 @@ def build_evaluation_command(root: Path, payload: dict) -> list[str]:
         raise ValueError("No inference checkpoint found. Train the model before evaluation.")
     device = _validate_device(payload.get("device", "cpu"))
     command = [
-        sys.executable, "-m", "core.evaluate",
+        sys.executable, "-u", "-m", "core.evaluate",
         "--checkpoint", str(checkpoint),
         "--manifest", str(manifest),
         "--device", device,
@@ -400,7 +400,8 @@ def _generate_response(root: Path, payload: dict) -> dict:
             "seed": seed,
             "checkpoint_trained": bool(
                 isinstance(checkpoint.get("training"), dict)
-                and checkpoint["training"].get("steps_completed", 0) > 0
+                and type(checkpoint["training"].get("steps_completed")) is int
+                and checkpoint["training"]["steps_completed"] > 0
             ),
         }
 
@@ -540,7 +541,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
                 self._send_json(404, {"error": "API route not found."})
             except (ValueError, RuntimeError) as error:
                 self._send_json(400, {"error": str(error)})
-            except (OSError, TypeError, KeyError) as error:
+            except (OSError, RuntimeError, TypeError, KeyError, ValueError) as error:
                 self._send_json(500, {"error": f"Local operation failed: {error}"})
 
         def log_error(self, format_string, *args):
