@@ -232,7 +232,7 @@ The store is opt-in and is not currently wired into `core.server` or a browser e
 - Adapters are registered only by trusted host code through `register_adapter()`. Plans and model output cannot register or directly execute a tool.
 - Every runtime plan step must bind a `tool_id` and operation. The call must match the task request ID and that exact step binding.
 - The host supplies a `RuntimeIdentity` on task creation, task retrieval, approval issuance, execution and cancellation. It must be created only after the host authenticates the extension session. The identity is bound to the task snapshot and approval grant; a different principal or extension session cannot read or operate that task.
-- The host registers each authenticated session using `register_session(identity, expires_at_unix=...)`. Sessions expire within 24 hours and can be irreversibly revoked with `revoke_session(identity)`. A revoked or expired session cannot create/read tasks, issue approvals or dispatch steps. Session registration is a trusted-host API, not an authentication mechanism or network endpoint.
+- The host registers each authenticated extension session using `register_session(identity, credential=..., client_id=..., expires_at_unix=...)`. The bearer credential is high-entropy, kept outside model/task data and stored only as a SHA-256 digest; the Chrome extension ID is bound to that credential. Sessions expire within 24 hours and can be irreversibly revoked with `revoke_session(identity)`. The session store can authenticate a request only when session ID, bearer credential and exact extension ID all match. A revoked or expired session cannot create/read tasks, issue approvals or dispatch steps. Session registration is a trusted-host API, not an authentication mechanism or network endpoint.
 - The host supplies the permission set on every `execute_step()` call. The runtime does not infer, persist or expand permissions.
 - Missing approval for an approval-required operation moves the step to `WAITING_APPROVAL` and persists a cryptographically random opaque approval reference in the task snapshot; no adapter is called. The reference is a lookup handle, not execution permission.
 - Trusted host code may call `issue_approval(call, user_confirmed=True, identity=identity)` only after explicit user consent for the exact operation and arguments. The grant is bound to the same principal and session as its task. The runtime creates the durable grant for the reference already attached to the step, or rotates the reference if its earlier grant is expired, revoked or consumed. Grant lifetime is capped at 15 minutes.
@@ -253,9 +253,14 @@ identity = RuntimeIdentity(
     principal_id="owner-opaque-id",
     session_id=secrets.token_urlsafe(32),
 )
+session_credential = secrets.token_urlsafe(32)
+client_id = "replace-with-the-actual-32-character-chrome-extension-id"
 with AutomationRuntime("data/automation/automation.sqlite3") as runtime:
     # Call only after the host has authenticated this extension session.
-    runtime.register_session(identity, expires_at_unix=time.time() + 3600)
+    runtime.register_session(
+        identity, credential=session_credential, client_id=client_id,
+        expires_at_unix=time.time() + 3600,
+    )
     runtime.register_adapter(trusted_adapter)
     runtime.create_task(
         task_id="task-001",
