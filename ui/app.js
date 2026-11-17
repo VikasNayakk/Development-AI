@@ -220,7 +220,9 @@
     const status = $("#evaluation-state");
     status.textContent = job.status;
     status.className = "status-pill " + statusClass(job.status);
-    $("#start-evaluation-button").disabled = ["queued", "running", "stopping"].includes(job.status);
+    const active = ["queued", "running", "stopping"].includes(job.status);
+    $("#start-evaluation-button").disabled = active;
+    $("#stop-evaluation-button").disabled = !active;
     if (job.status === "succeeded" && job.result) renderEvaluationResult(job.result);
     else if (job.status === "failed") {
       $("#evaluation-results").textContent = job.error || "Evaluation failed.";
@@ -381,6 +383,16 @@
 
   $("#clear-log-button").addEventListener("click", () => {
     $("#training-log").textContent = "Log view cleared. The job continues running.";
+  });
+
+  $("#stop-evaluation-button").addEventListener("click", async () => {
+    if (!state.currentJobId) return;
+    try {
+      await api("/api/jobs/" + encodeURIComponent(state.currentJobId) + "/stop", {
+        method: "POST", body: "{}"
+      });
+      toast("Evaluation stop requested.");
+    } catch (error) { toast(error.message, true); }
   });
 
   $("#evaluation-form").addEventListener("submit", async (event) => {
