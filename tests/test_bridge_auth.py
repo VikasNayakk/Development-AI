@@ -98,6 +98,13 @@ class BridgeAuthenticationTests(unittest.TestCase):
                 client_id=CLIENT_ID,
                 owner_confirmed_client_id=CLIENT_ID,
             )
+        self.now[0] = 1100.0
+        with self.assertRaises(BridgeAuthenticationError):
+            self.pairing.pair(
+                code,
+                client_id=CLIENT_ID,
+                owner_confirmed_client_id=CLIENT_ID,
+            )
         code, _ = self.pairing.create_pairing_code()
         self.pairing.invalidate_pairing_code()
         with self.assertRaises(BridgeAuthenticationError):
