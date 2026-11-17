@@ -676,6 +676,7 @@ def main():
             parser.error(f"Cannot safely resume training: {error}")
 
     for step in range(start_step, args.steps + 1):
+        early_stopping_triggered = False
         model.train()
         _synchronize_device(device)
         update_started = time.perf_counter()
