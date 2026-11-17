@@ -92,6 +92,25 @@ def _resolve_data_file(root: Path, relative_path: object, suffixes: set[str]) ->
     return candidate
 
 
+def _resolve_artifact_file(root: Path, filename: str) -> Path:
+    if filename not in {"latest.pt", "latest.resume.pt", "latest.metrics.json"}:
+        raise ValueError("Unsupported local artifact path.")
+    artifacts_root = root / "artifacts"
+    if artifacts_root.is_symlink():
+        raise ValueError("The artifacts directory cannot be a symlink.")
+    if artifacts_root.exists() and not artifacts_root.is_dir():
+        raise ValueError("The artifacts path must be a directory.")
+    candidate = artifacts_root / filename
+    if candidate.is_symlink():
+        raise ValueError("Checkpoint and artifact files cannot be symlinks.")
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError as error:
+        raise ValueError("Artifacts must remain inside the project directory.") from error
+    return candidate
+
+
 def build_training_command(root: Path, payload: dict) -> list[str]:
     data_path = _resolve_data_file(root, payload.get("data_path", "processed/train.txt"), {".txt"})
     steps = _bounded_int(payload, "steps", 1000, 1, 10_000_000)
@@ -106,8 +125,8 @@ def build_training_command(root: Path, payload: dict) -> list[str]:
     validation_fraction = _bounded_float(payload, "validation_fraction", 0.1, 0.001, 0.499999)
     device = _validate_device(payload.get("device", "cpu"))
 
-    output_path = root / "artifacts" / "latest.pt"
-    resume_path = root / "artifacts" / "latest.resume.pt"
+    output_path = _resolve_artifact_file(root, "latest.pt")
+    resume_path = _resolve_artifact_file(root, "latest.resume.pt")
     resume = payload.get("resume", False)
     if not isinstance(resume, bool):
         raise ValueError("resume must be true or false.")
@@ -145,7 +164,7 @@ def build_evaluation_command(root: Path, payload: dict) -> list[str]:
     manifest = _resolve_data_file(
         root, payload.get("manifest_path", "evaluation/manifest.json"), {".json"}
     )
-    checkpoint = root / "artifacts" / "latest.pt"
+    checkpoint = _resolve_artifact_file(root, "latest.pt")
     if not checkpoint.is_file():
         raise ValueError("No inference checkpoint found. Train the model before evaluation.")
     device = _validate_device(payload.get("device", "cpu"))
@@ -326,7 +345,7 @@ class LocalJobManager:
 
 def build_status(root: Path, jobs: LocalJobManager) -> dict:
     report = build_model_report()
-    checkpoint_path = root / "artifacts" / "latest.pt"
+    checkpoint_path = _resolve_artifact_file(root, "latest.pt")
     checkpoint_info = {
         "exists": checkpoint_path.is_file(),
         "trained": False,
@@ -395,7 +414,7 @@ def _generate_response(root: Path, payload: dict) -> dict:
     if seed is not None and (type(seed) is not int or not 0 <= seed <= (2**64) - 1):
         raise ValueError("seed must be null or an integer between 0 and 2^64 - 1.")
     device_name = _validate_device(payload.get("device", "cpu"))
-    checkpoint_path = root / "artifacts" / "latest.pt"
+    checkpoint_path = _resolve_artifact_file(root, "latest.pt")
     if not checkpoint_path.is_file():
         raise ValueError("No model checkpoint is available. Complete a training run first.")
 
@@ -457,7 +476,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header(
                 "Content-Security-Policy",
-                "default-src 'self'; script-src 'self'; style-src 'self'; "
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                 "connect-src 'self'; img-src 'self' data:; object-src 'none'; "
                 "base-uri 'none'; frame-ancestors 'none'",
             )
