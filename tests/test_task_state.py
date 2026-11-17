@@ -104,13 +104,30 @@ class TaskLifecycleTests(unittest.TestCase):
         snapshot = self.store.complete_step("task-2", "independent")
         self.assertEqual(snapshot.status, TaskStatus.PARTIAL)
 
-    def test_approval_is_a_state_marker_not_an_execution_permission(self):
-        snapshot = self.store.require_approval("task-1", "inspect")
+    def test_approval_reference_is_retained_but_is_not_execution_permission(self):
+        snapshot = self.store.require_approval(
+            "task-1", "inspect", approval_id="approval-opaque-123"
+        )
         self.assertEqual(snapshot.status, TaskStatus.WAITING_APPROVAL)
+        self.assertEqual(
+            snapshot.get_step("inspect").approval_id, "approval-opaque-123"
+        )
         snapshot = self.store.approve_step("task-1", "inspect")
         self.assertEqual(snapshot.get_step("inspect").status, StepStatus.PENDING)
+        self.assertEqual(
+            snapshot.get_step("inspect").approval_id, "approval-opaque-123"
+        )
         self.assertEqual(snapshot.status, TaskStatus.READY)
         self.assertIn("approval_recorded", [event.event_type for event in snapshot.events])
+
+    def test_invalid_approval_reference_is_rejected_without_state_change(self):
+        with self.assertRaises(ValueError):
+            self.store.require_approval(
+                "task-1", "inspect", approval_id="not a valid id"
+            )
+        snapshot = self.store.get_task("task-1")
+        self.assertEqual(snapshot.revision, self.task.revision)
+        self.assertEqual(snapshot.get_step("inspect").status, StepStatus.PENDING)
 
     def test_denial_blocks_dependents(self):
         snapshot = self.store.require_approval("task-1", "inspect")
