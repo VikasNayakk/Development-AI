@@ -94,8 +94,19 @@ class SQLiteApprovalStore:
         connection = self._connection
         connection.execute("BEGIN IMMEDIATE")
         try:
-            version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if version > _SCHEMA_VERSION:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS approval_store_metadata (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    schema_version INTEGER NOT NULL CHECK (schema_version >= 1)
+                )
+                """
+            )
+            metadata = connection.execute(
+                "SELECT schema_version FROM approval_store_metadata WHERE singleton = 1"
+            ).fetchone()
+            version = 0 if metadata is None else metadata["schema_version"]
+            if type(version) is not int or version > _SCHEMA_VERSION:
                 raise ApprovalStoreError(
                     f"Approval schema version {version} is newer than supported "
                     f"version {_SCHEMA_VERSION}."
@@ -162,7 +173,10 @@ class SQLiteApprovalStore:
                     END
                     """
                 )
-                connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+                connection.execute(
+                    "INSERT INTO approval_store_metadata(singleton, schema_version) VALUES (1, ?)",
+                    (_SCHEMA_VERSION,),
+                )
             else:
                 required_columns = {
                     "approval_id", "request_id", "task_id", "step_id", "tool_id",
@@ -180,6 +194,11 @@ class SQLiteApprovalStore:
                         "SELECT name FROM sqlite_master WHERE type = 'trigger'"
                     ).fetchall()
                 }
+                metadata_exists = connection.execute(
+                    "SELECT 1 FROM approval_store_metadata WHERE singleton = 1"
+                ).fetchone()
+                if metadata_exists is None:
+                    raise ApprovalStoreIntegrityError("Approval schema metadata is missing.")
                 required_triggers = {
                     "approval_grants_scope_immutable",
                     "approval_grants_terminal_once",
