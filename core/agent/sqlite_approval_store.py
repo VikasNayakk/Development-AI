@@ -16,7 +16,7 @@ from typing import Callable
 
 from .contracts import ApprovalGrant
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _MAX_PATH_LENGTH = 4096
 _MAX_APPROVAL_TTL_SECONDS = 15 * 60
 
@@ -130,6 +130,9 @@ class SQLiteApprovalStore:
                         issued_at_unix REAL NOT NULL,
                         consumed_at_unix REAL,
                         revoked_at_unix REAL,
+                        principal_id TEXT,
+                        session_id TEXT,
+                        CHECK ((principal_id IS NULL AND session_id IS NULL) OR (principal_id IS NOT NULL AND session_id IS NOT NULL)),
                         CHECK (expires_at_unix > issued_at_unix),
                         CHECK (consumed_at_unix IS NULL OR consumed_at_unix >= issued_at_unix),
                         CHECK (revoked_at_unix IS NULL OR revoked_at_unix >= issued_at_unix),
@@ -144,7 +147,7 @@ class SQLiteApprovalStore:
                         approval_id, request_id, task_id, step_id, tool_id,
                         tool_version, operation, arguments_sha256,
                         idempotency_key, expires_at_unix, user_confirmed,
-                        issued_at_unix
+                        issued_at_unix, principal_id, session_id
                     ON approval_grants
                     BEGIN
                         SELECT RAISE(ABORT, 'approval grant scope is immutable');
@@ -179,11 +182,33 @@ class SQLiteApprovalStore:
                     (_SCHEMA_VERSION,),
                 )
             else:
+                if version == 1:
+                    connection.execute("ALTER TABLE approval_grants ADD COLUMN principal_id TEXT")
+                    connection.execute("ALTER TABLE approval_grants ADD COLUMN session_id TEXT")
+                    connection.execute(
+                        "UPDATE approval_store_metadata SET schema_version = ? WHERE singleton = 1",
+                        (_SCHEMA_VERSION,),
+                    )
+                    connection.execute("DROP TRIGGER approval_grants_scope_immutable")
+                    connection.execute(
+                        """
+                        CREATE TRIGGER approval_grants_scope_immutable
+                        BEFORE UPDATE OF
+                            approval_id, request_id, task_id, step_id, tool_id,
+                            tool_version, operation, arguments_sha256,
+                            idempotency_key, expires_at_unix, user_confirmed,
+                            issued_at_unix, principal_id, session_id
+                        ON approval_grants
+                        BEGIN
+                            SELECT RAISE(ABORT, 'approval grant scope is immutable');
+                        END
+                        """
+                    )
                 required_columns = {
                     "approval_id", "request_id", "task_id", "step_id", "tool_id",
                     "tool_version", "operation", "arguments_sha256", "idempotency_key",
                     "expires_at_unix", "user_confirmed", "issued_at_unix",
-                    "consumed_at_unix", "revoked_at_unix",
+                    "consumed_at_unix", "revoked_at_unix", "principal_id", "session_id",
                 }
                 columns = {
                     row["name"]
@@ -256,6 +281,8 @@ class SQLiteApprovalStore:
             and row["operation"] == grant.operation
             and row["arguments_sha256"] == grant.arguments_sha256
             and row["idempotency_key"] == grant.idempotency_key
+            and row["principal_id"] == grant.principal_id
+            and row["session_id"] == grant.session_id
             and float(row["expires_at_unix"]) == float(grant.expires_at_unix)
             and row["user_confirmed"] == 1
             and grant.user_confirmed is True
@@ -281,14 +308,15 @@ class SQLiteApprovalStore:
                         approval_id, request_id, task_id, step_id, tool_id,
                         tool_version, operation, arguments_sha256,
                         idempotency_key, expires_at_unix, user_confirmed,
-                        issued_at_unix
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                        issued_at_unix, principal_id, session_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
                     """,
                     (
                         grant.approval_id, grant.request_id, grant.task_id,
                         grant.step_id, grant.tool_id, grant.tool_version,
                         grant.operation, grant.arguments_sha256,
                         grant.idempotency_key, float(grant.expires_at_unix), now,
+                        grant.principal_id, grant.session_id,
                     ),
                 )
                 self._connection.commit()
@@ -332,6 +360,8 @@ class SQLiteApprovalStore:
                 idempotency_key=row["idempotency_key"],
                 expires_at_unix=expires_at,
                 user_confirmed=True,
+                principal_id=row["principal_id"],
+                session_id=row["session_id"],
             )
         except (TypeError, ValueError, KeyError) as exc:
             raise ApprovalStoreIntegrityError("Stored approval grant is malformed.") from exc
