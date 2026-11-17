@@ -91,7 +91,7 @@ The registry must report real adapter capabilities and availability. The agent m
 
 ## Memory and task state
 
-The initial process-local task state engine is implemented in `core.agent.task_state`. It validates bounded plans (up to 100 steps), unique identifiers, known dependencies and acyclic dependency graphs. It tracks immutable task/step snapshots, dependency-gated execution, approval-wait markers, success/failure/denial/cancellation transitions, blocked dependents, result references, uncertainty about side effects, monotonically increasing revisions and ordered events. Independent steps may run concurrently; updates are serialized under a thread lock and callers may use `expected_revision` to reject stale writes. Approval state is only a workflow marker: it does not create or validate an `ApprovalGrant`, and the dispatcher remains the authorization boundary. Cancellation marks the task and pending work; it does not forcibly stop an already-running adapter. The store is in-memory and process-local, has bounded per-task event history, and is not durable across restarts.
+The initial process-local task state engine is implemented in `core.agent.task_state`. It validates bounded plans (up to 100 steps), unique identifiers, known dependencies and acyclic dependency graphs. It tracks immutable task/step snapshots, dependency-gated execution, approval-wait markers, success/failure/denial/cancellation transitions, blocked dependents, result references, uncertainty about side effects, monotonically increasing revisions and ordered events. Independent steps may run concurrently; updates are serialized under a thread lock and callers may use `expected_revision` to reject stale writes. Approval state is only a workflow marker: it does not create or validate an `ApprovalGrant`, and the dispatcher remains the authorization boundary. Cancellation marks the task and pending work; it does not forcibly stop an already-running adapter. The in-memory store is process-local and not durable across restarts. A separate SQLite-backed implementation is now provided in `core.agent.sqlite_task_state`; it persists task snapshots and append-only event rows transactionally.
 
 Use distinct scopes rather than one unrestricted memory store:
 
@@ -153,7 +153,38 @@ The repository now contains an initial in-process foundation in `core.agent.cont
 - Single-use approval IDs, bounded adapter deadlines, cancellation context and normalized results.
 - Retryability is suppressed for operations declared non-idempotent.
 - Process-local task and plan state with dependency validation, guarded transitions, cancellation requests, approval-wait markers, revision checks and ordered in-memory events.
+- SQLite task persistence with atomic state/event writes, WAL mode, full synchronous commits, append-only event triggers, schema-version checks, restart recovery and cross-instance optimistic revision protection. This is a task ledger, not yet the durable approval-grant store or the application-wide audit service.
 
-This is an initial contract/dispatch and process-local task-state foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, persistent approval store, durable task state, durable audit-log service, multi-tool planner or end-to-end browser control. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
+This is an initial contract/dispatch and process-local task-state foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, persistent approval-grant store, application-wide durable audit-log service, integrated server/dispatcher task recovery, multi-tool planner or end-to-end browser control. The SQLite task ledger is available as a library component but is not yet wired into the running application. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
 
 This document defines the intended architecture and acceptance criteria; it is not evidence that the extension or external automation tools are already connected.
+
+## SQLite task ledger (initial implementation)
+
+`SQLiteTaskStateStore` is an opt-in durable counterpart to the process-local `TaskStateStore`. It uses only Python's standard-library `sqlite3` module; no new runtime dependency is required.
+
+- Create one store instance per application process and close it on shutdown. The store supports context-manager use.
+- Every task mutation runs inside `BEGIN IMMEDIATE`; the task snapshot and newly appended events commit or roll back together.
+- A revision compare-and-swap protects against stale writers across independent store instances/processes.
+- Event rows are append-only at the database layer. On read, the store checks event sequence/revision continuity, snapshot revision, timestamps, step identifiers and dependency graph integrity.
+- Schema version is stored in SQLite `user_version`; unknown newer schemas fail closed.
+- File-backed databases use WAL, `synchronous=FULL`, a bounded busy timeout and a best-effort owner-only database-file mode on platforms that support POSIX permissions.
+- The database stores user goal text, step descriptions and result references. Do not put credentials, cookies, access tokens, raw private page contents or unrestricted tool output in these fields. Protect the database directory and backups as user data.
+- The append-only event ledger has no deletion/retention API yet. Define retention, export and deletion policy before production deployment.
+- SQLite task persistence does not persist dispatcher approval grants, adapter secrets or running-process execution. A crash while an external side effect is in flight still requires adapter-level idempotency and reconciliation; restoring a task does not prove whether that side effect occurred.
+- This component is not yet connected to `core.server`, the tool dispatcher, a browser extension or any external automation adapter.
+
+Example:
+
+```python
+from core.agent import PlanStep, SQLiteTaskStateStore
+
+with SQLiteTaskStateStore("data/automation/tasks.sqlite3") as tasks:
+    task = tasks.create_task(
+        task_id="task-001",
+        request_id="request-001",
+        goal="Inspect a page and verify the requested change.",
+        steps=(PlanStep("inspect", "Inspect the page."),),
+    )
+    print(task.revision)
+```
