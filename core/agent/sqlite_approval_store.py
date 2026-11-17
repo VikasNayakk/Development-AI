@@ -304,6 +304,67 @@ class SQLiteApprovalStore:
                 self._connection.rollback()
                 raise
 
+    @staticmethod
+    def _grant_from_row(row: sqlite3.Row) -> ApprovalGrant:
+        try:
+            if type(row["user_confirmed"]) is not int or row["user_confirmed"] != 1:
+                raise ValueError("Stored confirmation marker is invalid.")
+            issued_at = row["issued_at_unix"]
+            expires_at = row["expires_at_unix"]
+            if (
+                type(issued_at) not in (int, float)
+                or not math.isfinite(issued_at)
+                or type(expires_at) not in (int, float)
+                or not math.isfinite(expires_at)
+                or expires_at <= issued_at
+            ):
+                raise ValueError("Stored approval timestamps are invalid.")
+            return ApprovalGrant(
+                approval_id=row["approval_id"],
+                request_id=row["request_id"],
+                task_id=row["task_id"],
+                step_id=row["step_id"],
+                tool_id=row["tool_id"],
+                tool_version=row["tool_version"],
+                operation=row["operation"],
+                arguments_sha256=row["arguments_sha256"],
+                idempotency_key=row["idempotency_key"],
+                expires_at_unix=expires_at,
+                user_confirmed=True,
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            raise ApprovalStoreIntegrityError("Stored approval grant is malformed.") from exc
+
+    def get(self, approval_id: str) -> ApprovalGrant | None:
+        """Load an active, unexpired grant after an application restart."""
+        if not isinstance(approval_id, str) or not approval_id.strip() or len(approval_id) > 128:
+            raise ValueError("approval_id must be a non-empty identifier of at most 128 characters.")
+        with self._lock:
+            self._ensure_open()
+            now = self._now()
+            self._connection.execute("BEGIN")
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM approval_grants WHERE approval_id = ?",
+                    (approval_id,),
+                ).fetchone()
+                if row is None:
+                    self._connection.commit()
+                    return None
+                grant = self._grant_from_row(row)
+                if (
+                    row["consumed_at_unix"] is not None
+                    or row["revoked_at_unix"] is not None
+                    or grant.expires_at_unix <= now
+                ):
+                    self._connection.commit()
+                    return None
+                self._connection.commit()
+                return grant
+            except Exception:
+                self._connection.rollback()
+                raise
+
     def consume(self, grant: ApprovalGrant) -> bool:
         """Atomically match and consume an unexpired grant exactly once."""
         if not isinstance(grant, ApprovalGrant):
