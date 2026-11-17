@@ -317,6 +317,7 @@ class SQLiteApprovalStore:
                 or type(expires_at) not in (int, float)
                 or not math.isfinite(expires_at)
                 or expires_at <= issued_at
+                or expires_at - issued_at > _MAX_APPROVAL_TTL_SECONDS
             ):
                 raise ValueError("Stored approval timestamps are invalid.")
             return ApprovalGrant(
@@ -378,12 +379,16 @@ class SQLiteApprovalStore:
                     "SELECT * FROM approval_grants WHERE approval_id = ?",
                     (grant.approval_id,),
                 ).fetchone()
+                if row is None:
+                    self._connection.rollback()
+                    return False
+                stored_grant = self._grant_from_row(row)
                 if (
-                    row is None
-                    or not self._matches(row, grant)
+                    not self._matches(row, grant)
+                    or row["issued_at_unix"] > now
                     or row["consumed_at_unix"] is not None
                     or row["revoked_at_unix"] is not None
-                    or float(row["expires_at_unix"]) <= now
+                    or stored_grant.expires_at_unix <= now
                 ):
                     self._connection.rollback()
                     return False
