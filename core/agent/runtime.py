@@ -290,13 +290,13 @@ class AutomationRuntime:
             else:
                 if existing is not None:
                     self._approvals.revoke(approval_id)
-                approval_id = secrets.token_urlsafe(32)
-                task = self._tasks.require_approval(
-                    task.task_id,
-                    call.step_id,
-                    approval_id=approval_id,
-                    expected_revision=task.revision,
-                )
+                    approval_id = secrets.token_urlsafe(32)
+                    task = self._tasks.require_approval(
+                        task.task_id,
+                        call.step_id,
+                        approval_id=approval_id,
+                        expected_revision=task.revision,
+                    )
                 grant = ApprovalGrant(
                     approval_id=approval_id,
                     request_id=call.request_id,
