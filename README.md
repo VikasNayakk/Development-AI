@@ -85,6 +85,24 @@ python -m core.benchmark_training --device cpu --warmup-steps 2 --steps 10 --bat
 
 The report records hardware/software context. Synthetic throughput is not a model-quality metric and may differ from real-corpus training. See [docs/TRAINING_BENCHMARK.md](docs/TRAINING_BENCHMARK.md) for metric definitions and limitations.
 
+## Local web UI
+
+Start the loopback-only Studio interface from the repository root:
+
+```bash
+python -m core.server
+```
+
+Open `http://127.0.0.1:8765` in your browser. The Studio includes:
+- **Overview:** model configuration, parameter count, checkpoint status and recent local jobs.
+- **Playground:** prompt generation from `artifacts/latest.pt`.
+- **Training:** local training configuration, progress/log monitoring, stop control and resume support.
+- **Evaluation:** held-out manifest runs with optional untrained-baseline comparison.
+
+The server binds only to `127.0.0.1`; it deliberately does not expose the API to a LAN or public network. Training files and evaluation manifests must be inside the local `data/` directory. Checkpoints and logs remain local under `artifacts/` and in process memory. The Studio does not upload prompts or datasets.
+
+The current model starts from random weights. Do not expect coherent answers until a suitable rights-cleared dataset has been prepared and the model has been trained and independently evaluated. See [docs/LOCAL_UI.md](docs/LOCAL_UI.md) for the complete interface guide and security scope.
+
 ## Quality checks
 ```bash
 python -m compileall -q core tests
