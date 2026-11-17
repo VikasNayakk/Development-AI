@@ -14,6 +14,11 @@ from .contracts import (
     ToolResult,
     validate_json_value,
 )
+from .sqlite_task_state import (
+    SQLiteTaskStateStore,
+    TaskPersistenceError,
+    TaskStoreIntegrityError,
+)
 from .task_state import (
     PlanStep,
     StaleTaskRevisionError,
@@ -33,5 +38,6 @@ __all__ = [
     "ToolOperation", "ToolRegistry", "ToolResult", "validate_json_value",
     "PlanStep", "StaleTaskRevisionError", "StepSnapshot", "StepStatus",
     "TaskEvent", "TaskNotFoundError", "TaskSnapshot", "TaskStateError",
-    "TaskStateStore", "TaskStatus",
+    "TaskStateStore", "TaskStatus", "SQLiteTaskStateStore",
+    "TaskPersistenceError", "TaskStoreIntegrityError",
 ]
