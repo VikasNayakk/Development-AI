@@ -163,7 +163,6 @@ class AutomationRuntime:
         steps: Iterable[PlanStep],
         identity: RuntimeIdentity,
     ) -> TaskSnapshot:
-        self._assert_active_identity(identity)
         plan = tuple(steps)
         if any(
             not isinstance(step, PlanStep)
@@ -176,6 +175,7 @@ class AutomationRuntime:
             )
         with self._lock:
             self._ensure_open()
+            self._assert_active_identity(identity)
             return self._tasks.create_task(
                 task_id=task_id,
                 request_id=request_id,
