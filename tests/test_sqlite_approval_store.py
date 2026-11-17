@@ -195,6 +195,7 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         grant = make_grant(expires=150.0)
         issuer.issue(grant)
         expired_store = self.open_store(clock=lambda: 200.0)
+        self.assertIsNone(expired_store.get(grant.approval_id))
         self.assertFalse(expired_store.consume(grant))
         row = expired_store._connection.execute(
             "SELECT consumed_at_unix FROM approval_grants WHERE approval_id = ?",
