@@ -56,6 +56,7 @@ def make_call(**overrides):
         "task_id": "task-1",
         "step_id": "step-1",
         "tool_id": "browser.test",
+        "tool_version": "1.0.0",
         "operation": "read_page",
         "arguments": {"url": "https://example.test"},
     }
@@ -167,9 +168,13 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         return ApprovalGrant(
             approval_id="approval-1",
             request_id=call.request_id,
+            task_id=call.task_id,
+            step_id=call.step_id,
             tool_id=call.tool_id,
+            tool_version=call.tool_version,
             operation=call.operation,
             arguments_sha256=arguments_digest(call.arguments),
+            idempotency_key=call.idempotency_key,
             expires_at_unix=expires,
             user_confirmed=confirmed,
         )
@@ -199,6 +204,40 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         self.assertEqual(result.status, ResultStatus.SUCCESS)
         self.assertEqual(result.output["title"], "Example")
         self.assertEqual(len(self.adapter.calls), 1)
+
+    def test_tool_version_must_match_registered_manifest(self):
+        result = self.dispatcher.dispatch(
+            make_call(tool_version="2.0.0"),
+            granted_permissions={"browser.read"},
+        )
+        self.assertEqual(result.error_code, "tool_version_mismatch")
+        self.assertEqual(len(self.adapter.calls), 0)
+
+    def test_approval_is_bound_to_idempotency_key(self):
+        operation = make_operation(
+            name="submit_form",
+            risk_level=RiskLevel.HIGH,
+            side_effect=SideEffect.IRREVERSIBLE,
+            requires_approval=True,
+        )
+        adapter = FakeAdapter(operation=operation)
+        registry = ToolRegistry()
+        registry.register(adapter)
+        dispatcher = ToolDispatcher(registry)
+        approved_call = make_call(
+            operation="submit_form", idempotency_key="idem-001"
+        )
+        approval = self.make_approval(approved_call)
+        changed_call = make_call(
+            operation="submit_form", idempotency_key="idem-002"
+        )
+        result = dispatcher.dispatch(
+            changed_call,
+            granted_permissions={"browser.read"},
+            approval=approval,
+        )
+        self.assertEqual(result.error_code, "approval_scope_mismatch")
+        self.assertEqual(len(adapter.calls), 0)
 
     def test_unknown_tool_and_operation_are_denied(self):
         unknown_tool = self.dispatcher.dispatch(
@@ -259,6 +298,11 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
             granted_permissions={"browser.read"},
             approval=self.make_approval(make_call(arguments={"url": "https://other.test"})),
         )
+        step_mismatch = dispatcher.dispatch(
+            make_call(operation="submit_form", step_id="step-2"),
+            granted_permissions={"browser.read"},
+            approval=self.make_approval(call),
+        )
         expired = dispatcher.dispatch(
             call,
             granted_permissions={"browser.read"},
@@ -273,6 +317,7 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         )
         self.assertEqual(no_approval.error_code, "approval_required")
         self.assertEqual(mismatch.error_code, "approval_scope_mismatch")
+        self.assertEqual(step_mismatch.error_code, "approval_scope_mismatch")
         self.assertEqual(expired.error_code, "approval_expired")
         self.assertEqual(approved.status, ResultStatus.SUCCESS)
         self.assertEqual(len(adapter.calls), 1)
@@ -317,7 +362,7 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         first = dispatcher.dispatch(
             call, granted_permissions={"browser.read"}, approval=approval
         )
-        second = dispatcher.dispatch(
+        second = ToolDispatcher(registry).dispatch(
             call, granted_permissions={"browser.read"}, approval=approval
         )
         self.assertEqual(first.status, ResultStatus.SUCCESS)
