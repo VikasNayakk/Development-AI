@@ -64,7 +64,7 @@ def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> N
     if not isinstance(schema, Mapping):
         raise ValueError(f"{path}: schema must be an object.")
     schema_type = schema.get("type")
-    if schema_type not in _JSON_TYPES:
+    if not isinstance(schema_type, str) or schema_type not in _JSON_TYPES:
         raise ValueError(f"{path}: unsupported or missing schema type.")
     unknown = set(schema) - _SCHEMA_KEYS[schema_type]
     if unknown:
@@ -359,6 +359,7 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._adapters: dict[str, ToolAdapter] = {}
+        self._manifests: dict[str, ToolManifest] = {}
 
     def register(self, adapter: ToolAdapter) -> None:
         manifest = getattr(adapter, "manifest", None)
@@ -368,12 +369,16 @@ class ToolRegistry:
         if manifest.tool_id in self._adapters:
             raise ValueError(f"Tool already registered: {manifest.tool_id}")
         self._adapters[manifest.tool_id] = adapter
+        self._manifests[manifest.tool_id] = manifest
 
     def get(self, tool_id: str) -> ToolAdapter | None:
         return self._adapters.get(tool_id)
 
+    def get_manifest(self, tool_id: str) -> ToolManifest | None:
+        return self._manifests.get(tool_id)
+
     def manifests(self) -> tuple[ToolManifest, ...]:
-        return tuple(self._adapters[key].manifest for key in sorted(self._adapters))
+        return tuple(self._manifests[key] for key in sorted(self._manifests))
 
 
 class ToolDispatcher:
@@ -402,12 +407,20 @@ class ToolDispatcher:
         wall_clock=time.time,
         monotonic_clock=time.monotonic,
     ) -> ToolResult:
+        if not isinstance(call, ToolCall):
+            return self._denied("invalid_call")
+        if not isinstance(granted_permissions, (set, frozenset)) or any(
+            not isinstance(item, str) or not item.strip()
+            for item in granted_permissions
+        ):
+            return self._denied("invalid_permission_context")
         adapter = self._registry.get(call.tool_id)
-        if adapter is None:
+        manifest = self._registry.get_manifest(call.tool_id)
+        if adapter is None or manifest is None:
             return self._denied("unknown_tool")
-        if call.manifest_version != adapter.manifest.manifest_version:
+        if call.manifest_version != manifest.manifest_version:
             return self._denied("unsupported_manifest_version")
-        operation = adapter.manifest.get_operation(call.operation)
+        operation = manifest.get_operation(call.operation)
         if operation is None:
             return self._denied("unknown_operation")
         try:
@@ -417,7 +430,10 @@ class ToolDispatcher:
         if not operation.required_permissions.issubset(granted_permissions):
             return self._denied("missing_permission")
         if operation.requires_approval:
-            if approval is None or not approval.user_confirmed:
+            if (
+                not isinstance(approval, ApprovalGrant)
+                or not approval.user_confirmed
+            ):
                 return self._denied("approval_required")
             if (
                 approval.request_id != call.request_id
