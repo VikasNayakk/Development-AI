@@ -198,6 +198,7 @@ with SQLiteTaskStateStore("data/automation/tasks.sqlite3") as tasks:
 - A grant is bound to request, task, step, tool ID and version, operation, idempotency key and a SHA-256 digest of the exact arguments.
 - The store retains the digest and scope, not the raw argument object, cookies, credentials or page contents.
 - Grants expire within 15 minutes of issuance. Expiration is checked both when issuing and consuming.
+- `get(approval_id)` reloads an active, unexpired grant after application restart; consumed, revoked, expired or missing grants are not returned.
 - `consume()` uses a SQLite `BEGIN IMMEDIATE` transaction, so two store instances/processes cannot both consume the same grant.
 - `revoke()` atomically invalidates an unused grant. A consumed or revoked grant is terminal; scope cannot be edited and rows cannot be deleted through the database API/triggers.
 - The approval store has its own metadata table rather than SQLite's database-wide `user_version`, so it can coexist in the same database file as the task ledger without sharing migration counters.
