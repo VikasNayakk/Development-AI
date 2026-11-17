@@ -266,15 +266,15 @@ class SQLiteApprovalStore:
         self._validate_grant(grant)
         with self._lock:
             self._ensure_open()
-            now = self._now()
-            if grant.expires_at_unix <= now:
-                raise ValueError("An expired approval grant cannot be issued.")
-            if grant.expires_at_unix - now > _MAX_APPROVAL_TTL_SECONDS:
-                raise ValueError(
-                    f"Approval grant lifetime cannot exceed {_MAX_APPROVAL_TTL_SECONDS} seconds."
-                )
-            self._connection.execute("BEGIN IMMEDIATE")
             try:
+                self._connection.execute("BEGIN IMMEDIATE")
+                now = self._now()
+                if grant.expires_at_unix <= now:
+                    raise ValueError("An expired approval grant cannot be issued.")
+                if grant.expires_at_unix - now > _MAX_APPROVAL_TTL_SECONDS:
+                    raise ValueError(
+                        f"Approval grant lifetime cannot exceed {_MAX_APPROVAL_TTL_SECONDS} seconds."
+                    )
                 self._connection.execute(
                     """
                     INSERT INTO approval_grants (
@@ -341,9 +341,9 @@ class SQLiteApprovalStore:
             raise ValueError("approval_id must be a non-empty identifier of at most 128 characters.")
         with self._lock:
             self._ensure_open()
-            now = self._now()
-            self._connection.execute("BEGIN")
             try:
+                self._connection.execute("BEGIN")
+                now = self._now()
                 row = self._connection.execute(
                     "SELECT * FROM approval_grants WHERE approval_id = ?",
                     (approval_id,),
@@ -371,9 +371,9 @@ class SQLiteApprovalStore:
             return False
         with self._lock:
             self._ensure_open()
-            now = self._now()
-            self._connection.execute("BEGIN IMMEDIATE")
             try:
+                self._connection.execute("BEGIN IMMEDIATE")
+                now = self._now()
                 row = self._connection.execute(
                     "SELECT * FROM approval_grants WHERE approval_id = ?",
                     (grant.approval_id,),
@@ -415,9 +415,9 @@ class SQLiteApprovalStore:
             raise ValueError("approval_id must be a non-empty identifier of at most 128 characters.")
         with self._lock:
             self._ensure_open()
-            now = self._now()
-            self._connection.execute("BEGIN IMMEDIATE")
             try:
+                self._connection.execute("BEGIN IMMEDIATE")
+                now = self._now()
                 cursor = self._connection.execute(
                     """
                     UPDATE approval_grants
