@@ -211,6 +211,54 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         self.assertEqual(accepted.status, ResultStatus.SUCCESS)
         self.assertEqual(len(adapter.calls), 1)
 
+    def test_consume_checks_expiry_after_acquiring_write_transaction(self):
+        transaction_acquired = False
+
+        def clock():
+            return 200.0 if transaction_acquired else 100.0
+
+        store = self.open_store(clock=clock)
+        grant = make_grant(expires=150.0)
+        store.issue(grant)
+
+        def mark_transaction(statement):
+            nonlocal transaction_acquired
+            if statement.strip().upper() == "BEGIN IMMEDIATE":
+                transaction_acquired = True
+
+        store._connection.set_trace_callback(mark_transaction)
+        try:
+            self.assertFalse(store.consume(grant))
+        finally:
+            store._connection.set_trace_callback(None)
+
+        row = store._connection.execute(
+            "SELECT consumed_at_unix FROM approval_grants WHERE approval_id = ?",
+            (grant.approval_id,),
+        ).fetchone()
+        self.assertIsNone(row["consumed_at_unix"])
+
+    def test_get_checks_expiry_inside_read_transaction(self):
+        transaction_started = False
+
+        def clock():
+            return 200.0 if transaction_started else 100.0
+
+        store = self.open_store(clock=clock)
+        grant = make_grant(expires=150.0)
+        store.issue(grant)
+
+        def mark_transaction(statement):
+            nonlocal transaction_started
+            if statement.strip().upper() == "BEGIN":
+                transaction_started = True
+
+        store._connection.set_trace_callback(mark_transaction)
+        try:
+            self.assertIsNone(store.get(grant.approval_id))
+        finally:
+            store._connection.set_trace_callback(None)
+
     def test_expired_grant_is_not_consumed(self):
         issuer = self.open_store(clock=lambda: 100.0)
         grant = make_grant(expires=150.0)
