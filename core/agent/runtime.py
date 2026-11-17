@@ -306,9 +306,9 @@ class AutomationRuntime:
             self._ensure_open()
             self._assert_active_identity(identity)
             task, operation, error = self._resolve_call(call)
+            self._assert_task_owner(task, identity)
             if error is not None:
                 raise ValueError(error)
-            self._assert_task_owner(task, identity)
             if not operation.requires_approval:
                 raise ValueError("This operation does not require an approval grant.")
             step = task.get_step(call.step_id)
@@ -430,9 +430,9 @@ class AutomationRuntime:
             self._ensure_open()
             self._assert_active_identity(identity)
             task, operation, error = self._resolve_call(call)
+            self._assert_task_owner(task, identity)
             if error is not None:
                 return self._denied(task, error)
-            self._assert_task_owner(task, identity)
             if task.cancel_requested:
                 return RuntimeStepResult(
                     task=task,
