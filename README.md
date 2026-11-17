@@ -1,6 +1,8 @@
 # Development-AI
 
-An independent, local-first AI research project. The long-term objective is to own the model architecture, training pipeline, trained weights, inference runtime, memory and tool-decision layers.
+An independent, local-first AI research project. Its primary product goal is a project-owned AI brain that powers the browser extension and coordinates other connected automation tools—not merely a standalone chat/Q&A model.
+
+The AI is intended to understand goals, discover tool capabilities, plan work, support decisions, dispatch permission-checked operations, verify results and explain outcomes. The browser extension is one adapter; other automation systems must connect through a shared, versioned tool contract. The extension/automation platform is a planned capability and is not yet implemented. See [docs/EXTENSION_AUTOMATION_ARCHITECTURE.md](docs/EXTENSION_AUTOMATION_ARCHITECTURE.md).
 
 ## Independence
 - No required hosted AI API, pretrained model, or external model runtime.
@@ -13,6 +15,7 @@ An independent, local-first AI research project. The long-term objective is to o
 - Experimental project-owned byte-level BPE tokenizer and corpus benchmark CLI; not yet connected to model training.
 - Disjoint train/validation evaluation and best-validation checkpointing.
 - Local dataset preparation with explicit rights manifest, provenance hashes, conservative privacy filtering, normalization and exact deduplication.
+- Initial model-independent automation-agent foundation: versioned tool manifests, strict argument/output schemas, explicit registry, permission checks and scoped single-use approvals. No real extension or external automation adapters are connected yet.
 
 This is a small research model, not a capable general-purpose assistant. Initial output will be poor. Capability requires substantial high-quality data, compute and evaluation.
 
