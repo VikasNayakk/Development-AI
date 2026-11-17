@@ -1,4 +1,5 @@
 import json
+import socket
 import sys
 import tempfile
 import threading
@@ -278,6 +279,40 @@ class LocalHttpServerTests(unittest.TestCase):
                 self.assertEqual(first_response, [200])
         finally:
             release.set()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
+    def test_server_returns_408_for_incomplete_request_body(self):
+        server = create_server("127.0.0.1", 0, max_http_threads=1, request_timeout=0.2)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+                client.settimeout(2)
+                client.sendall(
+                    (
+                        f"POST /api/training HTTP/1.1\\r\\n"
+                        f"Host: 127.0.0.1:{port}\\r\\n"
+                        "Content-Type: application/json\\r\\n"
+                        "Content-Length: 10\\r\\n"
+                        "Connection: close\\r\\n\\r\\n"
+                        "{"
+                    ).encode("ascii")
+                )
+                response = bytearray()
+                while True:
+                    chunk = client.recv(4096)
+                    if not chunk:
+                        break
+                    response.extend(chunk)
+            self.assertIn(b"408 Request Timeout", response)
+            self.assertIn(b"Request body was not received", response)
+
+            with urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as health:
+                self.assertEqual(health.status, 200)
+        finally:
             server.shutdown()
             server.server_close()
             thread.join(timeout=3)
