@@ -273,18 +273,23 @@ class AutomationRuntime:
             if type(now) not in (int, float) or not math.isfinite(now):
                 raise RuntimeError("Runtime clock must return a finite Unix timestamp.")
 
-            # Reuse an active grant after a crash between durable grant issuance
-            # and task-state approval. Otherwise rotate the opaque persisted ID.
-            existing = (
-                self._approvals.get(step.approval_id)
-                if step.approval_id is not None
-                else None
-            )
-            if existing is not None:
-                if not self._grant_matches_call(existing, call):
-                    raise ValueError("The persisted approval reference has a different scope.")
+            # Reuse an active matching grant after a crash. If the reference
+            # points to an expired, consumed or differently scoped grant, rotate
+            # it before issuing a new host-confirmed approval.
+            approval_id = step.approval_id or secrets.token_urlsafe(32)
+            if step.approval_id is None:
+                task = self._tasks.require_approval(
+                    task.task_id,
+                    call.step_id,
+                    approval_id=approval_id,
+                    expected_revision=task.revision,
+                )
+            existing = self._approvals.get(approval_id)
+            if existing is not None and self._grant_matches_call(existing, call):
                 grant = existing
             else:
+                if existing is not None:
+                    self._approvals.revoke(approval_id)
                 approval_id = secrets.token_urlsafe(32)
                 task = self._tasks.require_approval(
                     task.task_id,
