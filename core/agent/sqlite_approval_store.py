@@ -311,8 +311,7 @@ class SQLiteApprovalStore:
         expires_at = row["expires_at_unix"]
         revoked_at = row["revoked_at_unix"]
         if (
-            row["principal_id"] != principal_id
-            or type(issued_at) not in (int, float)
+            type(issued_at) not in (int, float)
             or not math.isfinite(issued_at)
             or type(expires_at) not in (int, float)
             or not math.isfinite(expires_at)
@@ -328,6 +327,8 @@ class SQLiteApprovalStore:
             )
         ):
             raise ApprovalStoreIntegrityError("Stored session record is malformed.")
+        if row["principal_id"] != principal_id:
+            return False
         return revoked_at is None and issued_at <= now < expires_at
 
     def issue(self, grant: ApprovalGrant) -> None:
