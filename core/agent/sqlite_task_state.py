@@ -260,7 +260,11 @@ class SQLiteTaskStateStore:
             payload = json.loads(row["snapshot_json"])
             steps = []
             for item in payload["steps"]:
+                if not isinstance(item, dict):
+                    raise ValueError("Invalid task step record.")
                 plan_data = item["plan"]
+                if not isinstance(plan_data, dict):
+                    raise ValueError("Invalid task plan record.")
                 plan = PlanStep(
                     step_id=plan_data["step_id"],
                     description=plan_data["description"],
@@ -268,8 +272,6 @@ class SQLiteTaskStateStore:
                     tool_id=plan_data["tool_id"],
                     operation=plan_data["operation"],
                 )
-                if not isinstance(item, dict):
-                    raise ValueError("Invalid task step record.")
                 attempt = item["attempt"]
                 if type(attempt) is not int or attempt < 0:
                     raise ValueError("Invalid attempt count.")
