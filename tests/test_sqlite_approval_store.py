@@ -304,6 +304,7 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         connection.execute(
             "UPDATE approval_store_metadata SET schema_version = 99 WHERE singleton = 1"
         )
+        connection.commit()
         connection.close()
         with self.assertRaises(ApprovalStoreError):
             SQLiteApprovalStore(self.path)
