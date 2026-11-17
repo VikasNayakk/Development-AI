@@ -30,6 +30,8 @@ MAX_GENERATION_TOKENS = 256
 MAX_LOG_LINES = 400
 MAX_CAPTURED_OUTPUT = 4 * 1024 * 1024
 MAX_RETAINED_JOBS = 20
+MAX_HTTP_REQUEST_THREADS = 16
+HTTP_REQUEST_TIMEOUT_SECONDS = 15.0
 _GENERATION_LOCK = threading.Lock()
 
 
@@ -479,7 +481,78 @@ def _generate_response(root: Path, payload: dict) -> dict:
         }
 
 
-def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJECT_ROOT):
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """Threaded local HTTP server with a fixed worker budget and socket timeout."""
+
+    def __init__(
+        self,
+        server_address,
+        request_handler,
+        *,
+        max_workers: int = MAX_HTTP_REQUEST_THREADS,
+        request_timeout: float = HTTP_REQUEST_TIMEOUT_SECONDS,
+    ):
+        if type(max_workers) is not int or not 1 <= max_workers <= 256:
+            raise ValueError("max_http_threads must be an integer between 1 and 256.")
+        try:
+            timeout_is_finite = (
+                not isinstance(request_timeout, bool)
+                and isinstance(request_timeout, (int, float))
+                and math.isfinite(request_timeout)
+            )
+        except OverflowError:
+            timeout_is_finite = False
+        if not timeout_is_finite or request_timeout <= 0 or request_timeout > 300:
+            raise ValueError(
+                "request_timeout must be a finite number greater than 0 and at most 300 seconds."
+            )
+        self._request_slots = threading.BoundedSemaphore(max_workers)
+        self.max_http_threads = max_workers
+        self.request_timeout_seconds = float(request_timeout)
+        super().__init__(server_address, request_handler)
+
+    def process_request(self, request, client_address):
+        if not self._request_slots.acquire(blocking=False):
+            body = b'{"error":"Local server is busy. Retry shortly."}'
+            response = (
+                b"HTTP/1.1 503 Service Unavailable\r\n"
+                b"Content-Type: application/json; charset=utf-8\r\n"
+                b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n"
+                b"Cache-Control: no-store\r\n"
+                b"Connection: close\r\n"
+                b"X-Content-Type-Options: nosniff\r\n\r\n"
+                + body
+            )
+            try:
+                request.settimeout(1.0)
+                request.sendall(response)
+            except OSError:
+                pass
+            finally:
+                self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._request_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            request.settimeout(self.request_timeout_seconds)
+            super().process_request_thread(request, client_address)
+        finally:
+            self._request_slots.release()
+
+
+def create_server(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    root: Path = PROJECT_ROOT,
+    *,
+    max_http_threads: int = MAX_HTTP_REQUEST_THREADS,
+    request_timeout: float = HTTP_REQUEST_TIMEOUT_SECONDS,
+):
     if host != "127.0.0.1":
         raise ValueError("Development-AI UI is loopback-only; host must be 127.0.0.1.")
     root = Path(root).resolve()
@@ -650,7 +723,12 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
         def log_error(self, format_string, *args):
             super().log_error(format_string, *args)
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = BoundedThreadingHTTPServer(
+        (host, port),
+        Handler,
+        max_workers=max_http_threads,
+        request_timeout=request_timeout,
+    )
     server.daemon_threads = True
     server.job_manager = manager
     return server
