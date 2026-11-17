@@ -132,6 +132,28 @@ class LocalPathValidationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "CUDA"):
                 build_training_command(self.root, {"device": "cuda"})
 
+    def test_rejects_artifacts_directory_or_checkpoint_symlinks(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        artifacts = self.root / "artifacts"
+        artifacts.rmdir()
+        try:
+            artifacts.symlink_to(outside, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("Directory symlinks are unavailable on this runner.")
+        with self.assertRaisesRegex(ValueError, "artifacts directory"):
+            build_training_command(self.root, {})
+        artifacts.unlink()
+        artifacts.mkdir()
+        external_checkpoint = outside / "latest.pt"
+        external_checkpoint.write_bytes(b"outside")
+        try:
+            (artifacts / "latest.pt").symlink_to(external_checkpoint)
+        except (OSError, NotImplementedError):
+            self.skipTest("File symlinks are unavailable on this runner.")
+        with self.assertRaisesRegex(ValueError, "cannot be symlinks"):
+            build_training_command(self.root, {})
+
 
 class LocalJobManagerTests(unittest.TestCase):
     def setUp(self):
@@ -221,6 +243,24 @@ class LocalHttpServerTests(unittest.TestCase):
                 page = response.read().decode("utf-8")
                 self.assertIn("Development-AI Studio", page)
                 self.assertEqual(response.headers.get_content_type(), "text/html")
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+
+    def test_api_rejects_external_origin(self):
+        server = create_server("127.0.0.1", 0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            request = Request(
+                f"http://127.0.0.1:{port}/api/health",
+                headers={"Origin": "http://attacker.example"},
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=3)
+            self.assertEqual(raised.exception.code, 403)
         finally:
             server.shutdown()
             server.server_close()
