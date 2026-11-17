@@ -32,7 +32,13 @@ MAX_CAPTURED_OUTPUT = 4 * 1024 * 1024
 MAX_RETAINED_JOBS = 20
 MAX_HTTP_REQUEST_THREADS = 16
 HTTP_REQUEST_TIMEOUT_SECONDS = 15.0
+GENERATION_LOCK_WAIT_SECONDS = 5.0
 _GENERATION_LOCK = threading.Lock()
+
+
+class GenerationBusyError(RuntimeError):
+    """Raised when another generation call holds the inference lock too long."""
+
 
 
 def _utc_now() -> str:
@@ -448,7 +454,11 @@ def _generate_response(root: Path, payload: dict) -> dict:
         raise ValueError("No model checkpoint is available. Complete a training run first.")
 
     device = torch.device(device_name)
-    with _GENERATION_LOCK:
+    if not _GENERATION_LOCK.acquire(timeout=GENERATION_LOCK_WAIT_SECONDS):
+        raise GenerationBusyError(
+            "Another generation request is already running. Retry shortly."
+        )
+    try:
         checkpoint, model = _load_inference_model(checkpoint_path, device)
         if not isinstance(checkpoint, dict):
             raise ValueError("Model checkpoint is invalid.")
@@ -479,6 +489,8 @@ def _generate_response(root: Path, payload: dict) -> dict:
                 and checkpoint["training"]["steps_completed"] > 0
             ),
         }
+    finally:
+        _GENERATION_LOCK.release()
 
 
 class BoundedThreadingHTTPServer(ThreadingHTTPServer):
@@ -717,6 +729,11 @@ def create_server(
                 self._send_json(404, {"error": "API route not found."})
             except TimeoutError:
                 self._send_json(408, {"error": "Request body was not received before the request timeout."})
+            except GenerationBusyError as error:
+                self._send_json(429, {
+                    "error": str(error),
+                    "retry_after_seconds": GENERATION_LOCK_WAIT_SECONDS,
+                })
             except (ValueError, RuntimeError) as error:
                 self._send_json(400, {"error": str(error)})
             except (OSError, RuntimeError, TypeError, KeyError, ValueError) as error:

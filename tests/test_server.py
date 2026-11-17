@@ -350,6 +350,47 @@ class LocalHttpServerTests(unittest.TestCase):
             server.server_close()
             thread.join(timeout=3)
 
+    def test_generation_contention_returns_retryable_429(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        (root / "artifacts").mkdir()
+        (root / "artifacts" / "latest.pt").write_bytes(b"test-placeholder")
+        server = create_server("127.0.0.1", 0, root=root)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        held_lock = threading.Lock()
+        self.assertTrue(held_lock.acquire(blocking=False))
+        thread.start()
+        try:
+            port = server.server_address[1]
+            body = json.dumps({"prompt": "hello"}).encode("utf-8")
+            request = Request(
+                f"http://127.0.0.1:{port}/api/chat/generate",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with patch("core.server._GENERATION_LOCK", held_lock), patch(
+                "core.server.GENERATION_LOCK_WAIT_SECONDS", 0.05
+            ):
+                started = time.monotonic()
+                with self.assertRaises(HTTPError) as raised:
+                    urlopen(request, timeout=2)
+                elapsed = time.monotonic() - started
+                self.assertEqual(raised.exception.code, 429)
+                payload = json.loads(raised.exception.read().decode("utf-8"))
+                self.assertIn("Retry shortly", payload["error"])
+                self.assertEqual(payload["retry_after_seconds"], 0.05)
+                self.assertLess(elapsed, 1.0)
+
+            with urlopen(f"http://127.0.0.1:{port}/api/health", timeout=2) as response:
+                self.assertEqual(response.status, 200)
+        finally:
+            held_lock.release()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+            temp.cleanup()
+
     def test_api_rejects_external_origin(self):
         server = create_server("127.0.0.1", 0)
         thread = threading.Thread(target=server.serve_forever, daemon=True)

@@ -37,6 +37,7 @@ Uses `artifacts/latest.pt` and the current UTF-8 byte tokenizer. It supports:
 - Temperature from 0.05 to 2.0.
 - A maximum of 256 generated tokens per request.
 - Optional reproducible sampling seed.
+- Concurrent generation is serialized by the local inference lock; a request waits up to 5 seconds, then receives HTTP 429 with a retry hint rather than occupying a server worker indefinitely.
 - CPU or CUDA where available.
 
 The UI blocks generation when no checkpoint is present or the checkpoint is not verified as trained. The current model is a small from-scratch research model; a completed training run does not guarantee coherent responses.
