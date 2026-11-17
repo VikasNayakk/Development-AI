@@ -337,20 +337,32 @@ def build_status(root: Path, jobs: LocalJobManager) -> dict:
     if checkpoint_path.is_file():
         try:
             checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-            training = checkpoint.get("training", {}) if isinstance(checkpoint, dict) else {}
-            step = training.get("steps_completed") if isinstance(training, dict) else None
-            checkpoint_info.update({
-                "trained": isinstance(step, int) and not isinstance(step, bool) and step > 0,
-                "steps_completed": step if isinstance(step, int) and not isinstance(step, bool) else None,
-                "best_validation_loss": (
+            valid_structure = (
+                isinstance(checkpoint, dict)
+                and checkpoint.get("format_version") == 1
+                and checkpoint.get("tokenizer") == ByteTokenizer.name
+                and isinstance(checkpoint.get("config"), dict)
+                and isinstance(checkpoint.get("model_state"), dict)
+            )
+            if not valid_structure:
+                checkpoint_info["status"] = "invalid"
+            else:
+                training = checkpoint.get("training", {})
+                step = training.get("steps_completed") if isinstance(training, dict) else None
+                best_loss = (
                     training.get("best_validation_loss")
-                    if isinstance(training, dict)
-                    and isinstance(training.get("best_validation_loss"), (int, float))
-                    and math.isfinite(training["best_validation_loss"])
-                    else None
-                ),
-                "status": "ready",
-            })
+                    if isinstance(training, dict) else None
+                )
+                valid_best_loss = (
+                    type(best_loss) in {int, float}
+                    and math.isfinite(best_loss)
+                )
+                checkpoint_info.update({
+                    "trained": type(step) is int and step > 0,
+                    "steps_completed": step if type(step) is int else None,
+                    "best_validation_loss": float(best_loss) if valid_best_loss else None,
+                    "status": "ready",
+                })
         except (OSError, RuntimeError, TypeError, ValueError):
             checkpoint_info["status"] = "invalid"
     return {
