@@ -310,8 +310,13 @@ class SQLiteApprovalStore:
         issued_at = row["issued_at_unix"]
         expires_at = row["expires_at_unix"]
         revoked_at = row["revoked_at_unix"]
+        client_id = row["client_id"]
+        credential_digest = row["credential_sha256"]
         if (
-            type(issued_at) not in (int, float)
+            ((client_id is None) != (credential_digest is None))
+            or (client_id is not None and not re.fullmatch(r"[a-p]{32}", client_id))
+            or (credential_digest is not None and not re.fullmatch(r"[0-9a-f]{64}", credential_digest))
+            or type(issued_at) not in (int, float)
             or not math.isfinite(issued_at)
             or type(expires_at) not in (int, float)
             or not math.isfinite(expires_at)
@@ -327,7 +332,11 @@ class SQLiteApprovalStore:
             )
         ):
             raise ApprovalStoreIntegrityError("Stored session record is malformed.")
-        if row["principal_id"] != principal_id:
+        if (
+            row["principal_id"] != principal_id
+            or client_id is None
+            or credential_digest is None
+        ):
             return False
         return revoked_at is None and issued_at <= now < expires_at
 
