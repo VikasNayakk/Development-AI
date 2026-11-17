@@ -184,6 +184,14 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already registered"):
             self.registry.register(FakeAdapter())
 
+    def test_dispatcher_passes_a_defensive_call_snapshot_to_adapter(self):
+        result = self.dispatcher.dispatch(
+            self.call, granted_permissions={"browser.read"}
+        )
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertIsNot(self.adapter.calls[0][0], self.call)
+        self.assertEqual(self.adapter.calls[0][0].arguments, self.call.arguments)
+
     def test_dispatches_only_after_schema_and_permission_validation(self):
         result = self.dispatcher.dispatch(
             self.call, granted_permissions={"browser.read"}
