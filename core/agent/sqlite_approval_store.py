@@ -356,6 +356,7 @@ class SQLiteApprovalStore:
                 if (
                     row["consumed_at_unix"] is not None
                     or row["revoked_at_unix"] is not None
+                    or row["issued_at_unix"] > now
                     or grant.expires_at_unix <= now
                 ):
                     self._connection.commit()
