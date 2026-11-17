@@ -344,7 +344,6 @@ class SQLiteApprovalStore:
             self._ensure_open()
             try:
                 self._connection.execute("BEGIN")
-                now = self._now()
                 row = self._connection.execute(
                     "SELECT * FROM approval_grants WHERE approval_id = ?",
                     (approval_id,),
@@ -353,6 +352,7 @@ class SQLiteApprovalStore:
                     self._connection.commit()
                     return None
                 grant = self._grant_from_row(row)
+                now = self._now()
                 if (
                     row["consumed_at_unix"] is not None
                     or row["revoked_at_unix"] is not None
@@ -375,7 +375,6 @@ class SQLiteApprovalStore:
             self._ensure_open()
             try:
                 self._connection.execute("BEGIN IMMEDIATE")
-                now = self._now()
                 row = self._connection.execute(
                     "SELECT * FROM approval_grants WHERE approval_id = ?",
                     (grant.approval_id,),
@@ -384,6 +383,7 @@ class SQLiteApprovalStore:
                     self._connection.rollback()
                     return False
                 stored_grant = self._grant_from_row(row)
+                now = self._now()
                 if (
                     not self._matches(row, grant)
                     or row["issued_at_unix"] > now
