@@ -28,6 +28,8 @@ INPUT_SCHEMA = {
     "additionalProperties": False,
 }
 IDENTITY = RuntimeIdentity(principal_id="owner-1", session_id="session-1")
+CLIENT_ID = "a" * 32
+CREDENTIAL = "test-credential-token-" + ("x" * 32)
 
 OUTPUT_SCHEMA = {
     "type": "object",
@@ -104,7 +106,9 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.database = Path(self.temp_dir.name) / "runtime.sqlite3"
         self.clock_value = [100.0]
         self.runtime = self.open_runtime()
-        self.runtime.register_session(IDENTITY, expires_at_unix=1000.0)
+        self.runtime.register_session(
+            IDENTITY, credential=CREDENTIAL, client_id=CLIENT_ID, expires_at_unix=1000.0
+        )
         self.addCleanup(self.close_runtime)
 
     def open_runtime(self):
@@ -406,7 +410,10 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.register()
         self.create_task()
         other_session = RuntimeIdentity("owner-1", "session-2")
-        self.runtime.register_session(other_session, expires_at_unix=1000.0)
+        self.runtime.register_session(
+            other_session, credential="other-session-token-" + ("y" * 32),
+            client_id=CLIENT_ID, expires_at_unix=1000.0,
+        )
         with self.assertRaises(PermissionError):
             self.runtime.get_task("task-1", identity=other_session)
         with self.assertRaises(PermissionError):
