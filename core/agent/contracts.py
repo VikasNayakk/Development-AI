@@ -584,6 +584,14 @@ class ToolDispatcher:
                 )
                 return self._denied(code)
 
+        # Cancellation may arrive while a durable approval is being consumed.
+        # Recheck immediately before entering the adapter.
+        if cancel_event.is_set():
+            return ToolResult(
+                status=ResultStatus.CANCELLED,
+                error_code="cancelled_before_dispatch",
+            )
+
         context = ExecutionContext(
             request_id=call.request_id,
             task_id=call.task_id,
