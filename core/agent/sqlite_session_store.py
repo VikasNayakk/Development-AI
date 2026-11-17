@@ -255,15 +255,25 @@ class SQLiteSessionStore:
                     self._connection.commit()
                     return False
                 timestamps = (row["issued_at_unix"], row["expires_at_unix"])
+                revoked_at = row["revoked_at_unix"]
                 if (
-                    row["principal_id"] != identity.principal_id
+                    row["session_id"] != identity.session_id
+                    or row["principal_id"] != identity.principal_id
                     or any(type(value) not in (int, float) or not math.isfinite(value) for value in timestamps)
                     or row["expires_at_unix"] <= row["issued_at_unix"]
                     or row["expires_at_unix"] - row["issued_at_unix"] > _MAX_SESSION_TTL_SECONDS
+                    or (
+                        revoked_at is not None
+                        and (
+                            type(revoked_at) not in (int, float)
+                            or not math.isfinite(revoked_at)
+                            or revoked_at < row["issued_at_unix"]
+                        )
+                    )
                 ):
                     raise SessionStoreIntegrityError("Stored session record is malformed.")
                 active = (
-                    row["revoked_at_unix"] is None
+                    revoked_at is None
                     and row["issued_at_unix"] <= now
                     and row["expires_at_unix"] > now
                 )
