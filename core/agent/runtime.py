@@ -310,7 +310,35 @@ class AutomationRuntime:
                     expires_at_unix=float(now) + float(lifetime_seconds),
                     user_confirmed=True,
                 )
-                self._approvals.issue(grant)
+                try:
+                    self._approvals.issue(grant)
+                except ValueError as error:
+                    if str(error) != "Approval ID already exists.":
+                        raise
+                    # An expired/revoked/consumed row cannot be reissued. Rotate
+                    # the reference and persist it before returning the new grant.
+                    approval_id = secrets.token_urlsafe(32)
+                    current = self._tasks.get_task(task.task_id)
+                    task = self._tasks.require_approval(
+                        current.task_id,
+                        call.step_id,
+                        approval_id=approval_id,
+                        expected_revision=current.revision,
+                    )
+                    grant = ApprovalGrant(
+                        approval_id=approval_id,
+                        request_id=call.request_id,
+                        task_id=call.task_id,
+                        step_id=call.step_id,
+                        tool_id=call.tool_id,
+                        tool_version=call.tool_version,
+                        operation=call.operation,
+                        arguments_sha256=arguments_digest(call.arguments),
+                        idempotency_key=call.idempotency_key,
+                        expires_at_unix=float(now) + float(lifetime_seconds),
+                        user_confirmed=True,
+                    )
+                    self._approvals.issue(grant)
             try:
                 current = self._tasks.get_task(task.task_id)
                 current_step = current.get_step(call.step_id)
