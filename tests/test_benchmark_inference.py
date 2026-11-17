@@ -58,6 +58,21 @@ class InferenceBenchmarkTests(unittest.TestCase):
             second["inference"]["generated_tokens_total"],
         )
 
+    def test_benchmark_preserves_callers_cpu_rng_state(self):
+        torch.manual_seed(2026)
+        state_before = torch.random.get_rng_state().clone()
+        run_inference_benchmark(
+            config=self.config,
+            device=torch.device("cpu"),
+            warmup_runs=0,
+            measured_runs=1,
+            batch_size=1,
+            prompt_tokens=3,
+            generation_tokens=1,
+            seed=7,
+        )
+        self.assertTrue(torch.equal(state_before, torch.random.get_rng_state()))
+
     def test_rejects_invalid_measurement_arguments(self):
         base = dict(
             config=self.config,
