@@ -45,7 +45,7 @@ The UI blocks generation when no checkpoint is present or the checkpoint is not 
 
 The training file path is relative to `data/`, for example `processed/train.txt`. All input paths are resolved and checked to ensure they remain inside the project's local `data/` directory.
 
-The screen controls optimizer steps, micro-batch size, gradient accumulation, context length, learning rate, seed, validation fraction, evaluation interval, evaluation iterations and CPU/CUDA device. It starts the existing `core.train` implementation; it does not introduce a separate training algorithm.
+The screen controls optimizer steps, micro-batch size, gradient accumulation, context length, learning rate, seed, validation fraction, evaluation interval, evaluation iterations, early-stopping patience/minimum validation-loss improvement, and CPU/CUDA device. Early stopping is disabled when patience is `0`; when enabled, it stops after the configured number of consecutive evaluation checks without the required validation-loss improvement. Its state is preserved in resumable checkpoints. It starts the existing `core.train` implementation; it does not introduce a separate training algorithm.
 
 The UI writes to:
 - `artifacts/latest.pt`: best-validation inference checkpoint.
