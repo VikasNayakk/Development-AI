@@ -80,7 +80,7 @@ class PlanStep:
         if self.tool_version is not None and (
             not isinstance(self.tool_version, str)
             or not re.fullmatch(
-                r"(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
+                r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
                 self.tool_version,
             )
         ):
