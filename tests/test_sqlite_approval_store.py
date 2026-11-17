@@ -19,6 +19,7 @@ from core.agent import (
     PlanStep,
     SQLiteTaskStateStore,
     SQLiteApprovalStore,
+    SQLiteSessionStore,
     ApprovalStoreError,
     ApprovalStoreIntegrityError,
 )
@@ -114,6 +115,9 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
     def test_identity_binding_is_persisted_and_part_of_approval_scope(self):
         store = self.open_store()
         identity = RuntimeIdentity("owner-1", "session-1")
+        sessions = SQLiteSessionStore(self.path, clock=lambda: 100.0)
+        self.addCleanup(sessions.close)
+        sessions.issue(identity, expires_at_unix=200.0)
         grant = make_grant(identity=identity)
         store.issue(grant)
         self.assertEqual(store.get(grant.approval_id), grant)
@@ -121,6 +125,24 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         wrong_session = make_grant(identity=RuntimeIdentity("owner-1", "session-2"))
         self.assertFalse(store.consume(wrong_session))
         self.assertTrue(store.consume(grant))
+
+    def test_revoked_session_invalidates_bound_approval_before_consumption(self):
+        store = self.open_store()
+        sessions = SQLiteSessionStore(self.path, clock=lambda: 100.0)
+        self.addCleanup(sessions.close)
+        identity = RuntimeIdentity("owner-1", "session-revoked")
+        sessions.issue(identity, expires_at_unix=200.0)
+        grant = make_grant(identity=identity, approval_id="revoked-session-grant")
+        store.issue(grant)
+
+        self.assertTrue(sessions.revoke(identity))
+        self.assertIsNone(store.get(grant.approval_id))
+        self.assertFalse(store.consume(grant))
+        row = store._connection.execute(
+            "SELECT consumed_at_unix FROM approval_grants WHERE approval_id = ?",
+            (grant.approval_id,),
+        ).fetchone()
+        self.assertIsNone(row["consumed_at_unix"])
 
     def test_schema_v1_migrates_to_identity_columns_without_rebinding_old_grants(self):
         connection = sqlite3.connect(self.path)
