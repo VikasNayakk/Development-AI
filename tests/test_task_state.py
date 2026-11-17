@@ -37,7 +37,7 @@ class TaskPlanValidationTests(unittest.TestCase):
     def test_rejects_duplicate_ids_unknown_dependencies_and_cycles(self):
         cases = (
             (PlanStep("a", "A"), PlanStep("a", "duplicate")),
-            (PlanStep("a", "A", ("missing",))),
+            (PlanStep("a", "A", ("missing",)),),
             (PlanStep("a", "A", ("b",)), PlanStep("b", "B", ("a",))),
         )
         for steps in cases:
