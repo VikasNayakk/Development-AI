@@ -198,6 +198,7 @@ class SQLiteTaskStateStore:
             "result_ref": step.result_ref,
             "error_code": step.error_code,
             "side_effects_may_have_occurred": step.side_effects_may_have_occurred,
+            "approval_id": step.approval_id,
         }
 
     @classmethod
@@ -259,7 +260,11 @@ class SQLiteTaskStateStore:
             payload = json.loads(row["snapshot_json"])
             steps = []
             for item in payload["steps"]:
+                if not isinstance(item, dict):
+                    raise ValueError("Invalid task step record.")
                 plan_data = item["plan"]
+                if not isinstance(plan_data, dict):
+                    raise ValueError("Invalid task plan record.")
                 plan = PlanStep(
                     step_id=plan_data["step_id"],
                     description=plan_data["description"],
@@ -270,6 +275,9 @@ class SQLiteTaskStateStore:
                 attempt = item["attempt"]
                 if type(attempt) is not int or attempt < 0:
                     raise ValueError("Invalid attempt count.")
+                approval_id = item.get("approval_id")
+                if approval_id is not None:
+                    TaskStateStore._validate_approval_identifier(approval_id)
                 may_have_effects = item["side_effects_may_have_occurred"]
                 if type(may_have_effects) is not bool:
                     raise ValueError("Invalid side-effect marker.")
@@ -292,6 +300,7 @@ class SQLiteTaskStateStore:
                         result_ref=item["result_ref"],
                         error_code=item["error_code"],
                         side_effects_may_have_occurred=may_have_effects,
+                        approval_id=approval_id,
                     )
                 )
             if any(event_row["sequence"] != index for index, event_row in enumerate(event_rows, start=1)):
@@ -500,8 +509,19 @@ class SQLiteTaskStateStore:
     def start_step(self, task_id: str, step_id: str, *, expected_revision: int | None = None) -> TaskSnapshot:
         return self._mutate(task_id, "start_step", step_id, expected_revision=expected_revision)
 
-    def require_approval(self, task_id: str, step_id: str, *, expected_revision: int | None = None) -> TaskSnapshot:
-        return self._mutate(task_id, "require_approval", step_id, expected_revision=expected_revision)
+    def require_approval(
+        self,
+        task_id: str,
+        step_id: str,
+        *,
+        approval_id: str | None = None,
+        expected_revision: int | None = None,
+    ) -> TaskSnapshot:
+        return self._mutate(
+            task_id, "require_approval", step_id,
+            approval_id=approval_id,
+            expected_revision=expected_revision,
+        )
 
     def approve_step(self, task_id: str, step_id: str, *, expected_revision: int | None = None) -> TaskSnapshot:
         return self._mutate(task_id, "approve_step", step_id, expected_revision=expected_revision)

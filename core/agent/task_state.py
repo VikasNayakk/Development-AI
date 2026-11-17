@@ -18,6 +18,7 @@ from typing import Callable, Iterable
 _MAX_STEPS = 100
 _MAX_EVENTS_PER_TASK = 10_000
 _ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+_APPROVAL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.:-]{0,127}$")
 
 
 class TaskStatus(str, Enum):
@@ -86,6 +87,15 @@ class StepSnapshot:
     result_ref: str | None = None
     error_code: str | None = None
     side_effects_may_have_occurred: bool = False
+    # Opaque lookup reference only; the dispatcher must still validate the grant.
+    approval_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.approval_id is not None and (
+            not isinstance(self.approval_id, str)
+            or not _APPROVAL_ID_PATTERN.fullmatch(self.approval_id)
+        ):
+            raise ValueError("approval_id must be a stable identifier (1-128 characters).")
 
 
 @dataclass(frozen=True)
@@ -217,8 +227,15 @@ class TaskStateStore:
             )
 
     def require_approval(
-        self, task_id: str, step_id: str, *, expected_revision: int | None = None
+        self,
+        task_id: str,
+        step_id: str,
+        *,
+        approval_id: str | None = None,
+        expected_revision: int | None = None,
     ) -> TaskSnapshot:
+        if approval_id is not None:
+            self._validate_approval_identifier(approval_id)
         with self._lock:
             task = self._current(task_id, expected_revision)
             self._ensure_event_capacity(task, 2)
@@ -228,7 +245,12 @@ class TaskStateStore:
             if step.status != StepStatus.PENDING:
                 raise TaskStateError("Approval can only be requested for a pending step.")
             return self._replace_step(
-                task, replace(step, status=StepStatus.WAITING_APPROVAL),
+                task,
+                replace(
+                    step,
+                    status=StepStatus.WAITING_APPROVAL,
+                    approval_id=approval_id,
+                ),
                 "approval_requested", step_id,
             )
 
@@ -337,6 +359,13 @@ class TaskStateStore:
     def _validate_identifier(value: str, label: str) -> None:
         if not isinstance(value, str) or not _ID_PATTERN.fullmatch(value):
             raise ValueError(f"{label} must be a stable identifier (1-128 characters).")
+
+    @staticmethod
+    def _validate_approval_identifier(value: str) -> None:
+        if not isinstance(value, str) or not _APPROVAL_ID_PATTERN.fullmatch(value):
+            raise ValueError(
+                "approval_id must be a URL-safe stable identifier (1-128 characters)."
+            )
 
     @staticmethod
     def _validate_acyclic(steps: tuple[PlanStep, ...]) -> None:
