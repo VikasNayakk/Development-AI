@@ -221,7 +221,7 @@ class ToolOperation:
     timeout_seconds: float = 10.0
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", self.name):
+        if not isinstance(self.name, str) or not re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", self.name):
             raise ValueError("Operation name must be a stable lowercase identifier.")
         if not isinstance(self.description, str) or not self.description.strip():
             raise ValueError("Operation description is required.")
@@ -262,7 +262,7 @@ class ToolManifest:
     manifest_version: int = 1
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[a-z][a-z0-9_.-]{1,95}", self.tool_id):
+        if not isinstance(self.tool_id, str) or not re.fullmatch(r"[a-z][a-z0-9_.-]{1,95}", self.tool_id):
             raise ValueError("tool_id must be a stable lowercase identifier.")
         for label, value in (
             ("display_name", self.display_name),
@@ -272,7 +272,7 @@ class ToolManifest:
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{label} is required.")
         if not re.fullmatch(
-            r"(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
+            r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
             self.version,
         ):
             raise ValueError("version must use semantic versioning (major.minor.patch).")
@@ -333,6 +333,8 @@ class ApprovalGrant:
             self.arguments_sha256,
         )):
             raise ValueError("Approval grant identifiers and digest are required.")
+        if not re.fullmatch(r"[0-9a-f]{64}", self.arguments_sha256):
+            raise ValueError("Approval argument digest must be a SHA-256 hex value.")
         if (
             isinstance(self.expires_at_unix, bool)
             or not isinstance(self.expires_at_unix, (int, float))
