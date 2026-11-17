@@ -81,6 +81,7 @@ class LocalPathValidationTests(unittest.TestCase):
         self.assertIn("--gradient-accumulation-steps", command)
         self.assertEqual(command[command.index("--steps") + 1], "25")
         self.assertEqual(command[command.index("--batch-size") + 1], "2")
+        self.assertEqual(command[command.index("--resume-interval") + 1], "100")
         self.assertFalse(any("shell" in item for item in command))
 
     def test_training_command_rejects_invalid_values_and_overwrite(self):
