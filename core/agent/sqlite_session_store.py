@@ -297,8 +297,13 @@ class SQLiteSessionStore:
                     return False
                 timestamps = (row["issued_at_unix"], row["expires_at_unix"])
                 revoked_at = row["revoked_at_unix"]
+                client_id = row["client_id"]
+                credential_digest = row["credential_sha256"]
                 if (
                     row["session_id"] != identity.session_id
+                    or ((client_id is None) != (credential_digest is None))
+                    or (client_id is not None and not re.fullmatch(r"[a-p]{32}", client_id))
+                    or (credential_digest is not None and not re.fullmatch(r"[0-9a-f]{64}", credential_digest))
                     or any(type(value) not in (int, float) or not math.isfinite(value) for value in timestamps)
                     or row["expires_at_unix"] <= row["issued_at_unix"]
                     or row["expires_at_unix"] - row["issued_at_unix"] > _MAX_SESSION_TTL_SECONDS
@@ -312,7 +317,11 @@ class SQLiteSessionStore:
                     )
                 ):
                     raise SessionStoreIntegrityError("Stored session record is malformed.")
-                if row["principal_id"] != identity.principal_id:
+                if (
+                    row["principal_id"] != identity.principal_id
+                    or client_id is None
+                    or credential_digest is None
+                ):
                     self._connection.commit()
                     return False
                 active = (
@@ -322,6 +331,75 @@ class SQLiteSessionStore:
                 )
                 self._connection.commit()
                 return active
+            except Exception:
+                self._connection.rollback()
+                raise
+
+    def authenticate(
+        self, session_id: str, *, credential: str, client_id: str
+    ) -> RuntimeIdentity | None:
+        """Authenticate a paired extension using its origin ID and bearer token."""
+        if not isinstance(session_id, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-][A-Za-z0-9_.:@/-]{0,127}", session_id
+        ):
+            return None
+        if not isinstance(credential, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-]{32,256}", credential
+        ):
+            return None
+        if not isinstance(client_id, str) or not re.fullmatch(r"[a-p]{32}", client_id):
+            return None
+        supplied_digest = hashlib.sha256(credential.encode("ascii")).hexdigest()
+        with self._lock:
+            self._ensure_open()
+            try:
+                self._connection.execute("BEGIN")
+                row = self._connection.execute(
+                    "SELECT * FROM agent_sessions WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+                now = self._now()
+                if row is None:
+                    self._connection.commit()
+                    return None
+                issued_at = row["issued_at_unix"]
+                expires_at = row["expires_at_unix"]
+                revoked_at = row["revoked_at_unix"]
+                stored_digest = row["credential_sha256"]
+                if (
+                    type(issued_at) not in (int, float)
+                    or not math.isfinite(issued_at)
+                    or type(expires_at) not in (int, float)
+                    or not math.isfinite(expires_at)
+                    or expires_at <= issued_at
+                    or expires_at - issued_at > _MAX_SESSION_TTL_SECONDS
+                    or (
+                        revoked_at is not None
+                        and (
+                            type(revoked_at) not in (int, float)
+                            or not math.isfinite(revoked_at)
+                            or revoked_at < issued_at
+                        )
+                    )
+                ):
+                    raise SessionStoreIntegrityError("Stored session record is malformed.")
+                if (
+                    row["client_id"] != client_id
+                    or not isinstance(stored_digest, str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", stored_digest)
+                    or not hmac.compare_digest(stored_digest, supplied_digest)
+                    or revoked_at is not None
+                    or issued_at > now
+                    or expires_at <= now
+                ):
+                    self._connection.commit()
+                    return None
+                identity = RuntimeIdentity(
+                    principal_id=row["principal_id"],
+                    session_id=row["session_id"],
+                )
+                self._connection.commit()
+                return identity
             except Exception:
                 self._connection.rollback()
                 raise
