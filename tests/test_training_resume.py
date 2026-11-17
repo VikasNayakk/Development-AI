@@ -39,6 +39,8 @@ class TrainingResumeTests(unittest.TestCase):
             "validation_fraction": 0.1,
             "eval_interval": 10,
             "eval_iters": 2,
+            "early_stopping_patience": 0,
+            "early_stopping_min_delta": 0.0,
             "device_type": "cpu",
             "cuda_device_count": 0,
         }
@@ -143,6 +145,8 @@ class TrainingResumeTests(unittest.TestCase):
             **legacy,
             "gradient_accumulation_steps": 1,
             "effective_batch_size": 8,
+            "early_stopping_patience": 0,
+            "early_stopping_min_delta": 0.0,
         }
         self.assertTrue(_training_settings_match(legacy, expected))
 
@@ -152,6 +156,12 @@ class TrainingResumeTests(unittest.TestCase):
             "effective_batch_size": 16,
         }
         self.assertFalse(_training_settings_match(legacy, incompatible))
+        early_stopping_enabled = {
+            **expected,
+            "early_stopping_patience": 2,
+            "early_stopping_min_delta": 0.1,
+        }
+        self.assertFalse(_training_settings_match(legacy, early_stopping_enabled))
 
     def _run_training(self, arguments):
         stdout = io.StringIO()
@@ -272,6 +282,87 @@ class TrainingResumeTests(unittest.TestCase):
             best = torch.load(split_best, map_location="cpu", weights_only=True)
             self.assertEqual(best["format_version"], 1)
             self.assertEqual(best["tokenizer"], "utf8-byte-v1")
+
+    def test_validation_early_stopping_honors_min_delta_and_resumes_safely(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data_path = root / "train.txt"
+            data_path.write_text(
+                ("Reviewed training fixture for early stopping. "
+                 "Validation examples are separate. नमस्ते!\\n") * 80,
+                encoding="utf-8",
+            )
+            best_path = root / "early-stop.pt"
+            resume_path = root / "early-stop.resume.pt"
+            common = [
+                *self._common_arguments(data_path),
+                "--early-stopping-patience", "2",
+                "--early-stopping-min-delta", "0.1",
+            ]
+            validation_sequence = iter((1.0, 0.95, 0.95))
+
+            def fixed_validation_metrics(*args, **kwargs):
+                value = next(validation_sequence)
+                return {"train": value + 0.2, "validation": value}
+
+            with patch("core.train.estimate_loss", side_effect=fixed_validation_metrics):
+                output = self._run_training([
+                    *common,
+                    "--steps", "10",
+                    "--output", str(best_path),
+                ])
+
+            self.assertIn("Early stopping triggered at step 4", output)
+            stopped = torch.load(resume_path, map_location="cpu", weights_only=True)
+            stopped_training = stopped["training"]
+            self.assertEqual(stopped_training["steps_completed"], 4)
+            self.assertEqual(stopped_training["best_validation_loss"], 0.95)
+            self.assertEqual(stopped_training["early_stopping_best_loss"], 1.0)
+            self.assertEqual(stopped_training["early_stopping_bad_evaluations"], 2)
+            self.assertEqual(
+                [record["step"] for record in stopped["history"]],
+                [1, 2, 4],
+            )
+            self.assertFalse(stopped["history"][0]["early_stopping_triggered"])
+            self.assertTrue(stopped["history"][-1]["early_stopping_triggered"])
+
+            best = torch.load(best_path, map_location="cpu", weights_only=True)
+            self.assertEqual(best["training"]["steps_completed"], 2)
+            self.assertEqual(best["training"]["best_validation_loss"], 0.95)
+
+            # Extending a run after an early-stop boundary starts a fresh patience window.
+            with patch(
+                "core.train.estimate_loss",
+                return_value={"train": 1.4, "validation": 1.2},
+            ):
+                resumed_output = self._run_training([
+                    *common,
+                    "--steps", "6",
+                    "--output", str(best_path),
+                    "--resume-from", str(resume_path),
+                ])
+
+            self.assertIn("resetting the consecutive non-improvement counter", resumed_output)
+            resumed = torch.load(resume_path, map_location="cpu", weights_only=True)
+            self.assertEqual(resumed["training"]["steps_completed"], 6)
+            self.assertEqual(resumed["training"]["early_stopping_best_loss"], 1.0)
+            self.assertEqual(resumed["training"]["early_stopping_bad_evaluations"], 1)
+            self.assertEqual(resumed["history"][-1]["step"], 6)
+            self.assertFalse(resumed["history"][-1]["early_stopping_triggered"])
+
+    def test_training_cli_rejects_invalid_early_stopping_settings(self):
+        invalid_arguments = (
+            ["--early-stopping-patience", "-1"],
+            ["--early-stopping-min-delta", "-0.1", "--early-stopping-patience", "2"],
+            ["--early-stopping-min-delta", "nan", "--early-stopping-patience", "2"],
+            ["--early-stopping-min-delta", "0.1"],
+        )
+        for extra in invalid_arguments:
+            with self.subTest(extra=extra):
+                with patch("sys.argv", ["core.train", *extra]):
+                    with self.assertRaises(SystemExit) as raised:
+                        train_main()
+                self.assertEqual(raised.exception.code, 2)
 
     def test_resume_refuses_changed_training_corpus(self):
         with tempfile.TemporaryDirectory() as directory:
