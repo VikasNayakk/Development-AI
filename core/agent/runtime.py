@@ -342,8 +342,14 @@ class AutomationRuntime:
             try:
                 current = self._tasks.get_task(task.task_id)
                 current_step = current.get_step(call.step_id)
-                if current_step is None or current_step.status != StepStatus.WAITING_APPROVAL:
-                    raise TaskStateError("The task step changed before approval was recorded.")
+                if (
+                    current_step is None
+                    or current_step.status != StepStatus.WAITING_APPROVAL
+                    or current_step.approval_id != grant.approval_id
+                ):
+                    raise TaskStateError(
+                        "The task approval reference changed before the grant was recorded."
+                    )
                 self._tasks.approve_step(
                     task.task_id, call.step_id, expected_revision=current.revision
                 )
