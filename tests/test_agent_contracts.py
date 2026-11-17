@@ -507,6 +507,7 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
             call,
             granted_permissions={"browser.read"},
             approval=approval,
+            wall_clock=lambda: 100,
         )
         self.assertEqual(result.status, ResultStatus.DENIED)
         self.assertEqual(result.error_code, "approval_store_unavailable")
