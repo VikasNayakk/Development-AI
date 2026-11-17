@@ -53,10 +53,14 @@
     const config = model.config || {};
     const params = model.parameters || {};
     const checkpoint = data.checkpoint || {};
-    $("#metric-model-status").textContent = checkpoint.trained ? "Trained" : checkpoint.exists ? "Checkpoint ready" : "Not trained";
+    $("#metric-model-status").textContent = checkpoint.trained
+      ? "Trained"
+      : checkpoint.status === "invalid" ? "Invalid checkpoint"
+      : checkpoint.exists ? "Untrained" : "Not trained";
     $("#metric-model-description").textContent = checkpoint.trained
       ? "Best-validation checkpoint available"
-      : checkpoint.exists ? "Checkpoint has no confirmed training step" : "Train a model to enable inference";
+      : checkpoint.status === "invalid" ? "Checkpoint metadata or weights are invalid"
+      : checkpoint.exists ? "Checkpoint file exists but training is not verified" : "Train a model to enable inference";
     $("#metric-parameters").textContent = Number(params.trainable || 0).toLocaleString();
     $("#metric-vocab").textContent = Number((model.tokenizer || {}).vocab_size || 0).toLocaleString();
     $("#metric-tokenizer").textContent = (model.tokenizer || {}).name || "—";
@@ -68,6 +72,16 @@
 
     const notice = $("#model-notice");
     notice.hidden = checkpoint.trained;
+    if (!checkpoint.trained) {
+      notice.querySelector("strong").textContent = checkpoint.status === "invalid"
+        ? "Checkpoint file is invalid"
+        : checkpoint.exists ? "Checkpoint has not been trained" : "Training checkpoint not found";
+      notice.querySelector("p").textContent = checkpoint.status === "invalid"
+        ? "Move the invalid artifact files out of artifacts/ before starting a fresh run."
+        : checkpoint.exists
+          ? "Resume only from the matching training and resume checkpoints, or move the old artifacts before a fresh run."
+          : "Prepare a dataset and complete a training run before using the Playground.";
+    }
     $("#playground-warning").hidden = checkpoint.trained;
     $("#playground-checkpoint").textContent = checkpoint.trained
       ? "Checkpoint · step " + Number(checkpoint.steps_completed).toLocaleString()
@@ -87,8 +101,14 @@
   function updateTrainingResumeHint(checkpoint) {
     const note = $(".resume-row small");
     if (!note) return;
-    if (checkpoint.exists) {
-      note.textContent = "A checkpoint already exists. Enable this to continue from the matching resume checkpoint; keep the same training file and settings.";
+    const resumeBox = $("#resume-training");
+    resumeBox.disabled = !checkpoint.trained || !checkpoint.resume_exists;
+    if (checkpoint.status === "invalid") {
+      note.textContent = "The existing checkpoint is invalid. Move the old files out of artifacts/ before starting fresh.";
+    } else if (checkpoint.exists && checkpoint.resume_exists) {
+      note.textContent = "Both checkpoints exist. Enable this only to continue the same run with the same corpus and settings.";
+    } else if (checkpoint.exists || checkpoint.resume_exists) {
+      note.textContent = "A previous artifact exists without its matching pair. Move the old files out of artifacts/ before a fresh run.";
     } else {
       note.textContent = "Continue from artifacts/latest.resume.pt after an interrupted run using the same corpus and settings.";
     }
