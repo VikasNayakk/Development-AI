@@ -514,6 +514,35 @@ class ToolRegistryAndDispatcherTests(unittest.TestCase):
         self.assertEqual(len(adapter.calls), 0)
         self.assertNotIn("private database path", str(result))
 
+    def test_cancellation_during_approval_consumption_stops_adapter(self):
+        operation = make_operation(
+            name="submit_form",
+            risk_level=RiskLevel.HIGH,
+            side_effect=SideEffect.IRREVERSIBLE,
+            requires_approval=True,
+        )
+        adapter = FakeAdapter(operation=operation)
+        call = make_call(operation="submit_form")
+        approval = self.make_approval(call)
+        cancellation = threading.Event()
+
+        def consume_then_cancel(_grant):
+            cancellation.set()
+            return True
+
+        registry = ToolRegistry(approval_consumer=consume_then_cancel)
+        registry.register(adapter)
+        result = ToolDispatcher(registry).dispatch(
+            call,
+            granted_permissions={"browser.read"},
+            approval=approval,
+            cancel_event=cancellation,
+            wall_clock=lambda: 100,
+        )
+        self.assertEqual(result.status, ResultStatus.CANCELLED)
+        self.assertEqual(result.error_code, "cancelled_before_dispatch")
+        self.assertEqual(len(adapter.calls), 0)
+
     def test_dispatch_rejects_non_tool_call(self):
         result = self.dispatcher.dispatch(
             {"tool_id": "browser.test"},  # type: ignore[arg-type]
