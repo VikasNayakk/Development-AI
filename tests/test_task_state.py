@@ -115,7 +115,7 @@ class TaskLifecycleTests(unittest.TestCase):
         snapshot = self.store.approve_step("task-1", "inspect")
         self.assertEqual(snapshot.get_step("inspect").status, StepStatus.PENDING)
         self.assertEqual(
-            snapshot.get_step("inspect").approval_id, "approval-opaque-123"
+            snapshot.get_step("inspect").approval_id, "_approval-opaque-123"
         )
         self.assertEqual(snapshot.status, TaskStatus.READY)
         self.assertIn("approval_recorded", [event.event_type for event in snapshot.events])
