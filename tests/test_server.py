@@ -224,6 +224,9 @@ class LocalHttpServerTests(unittest.TestCase):
         self.assertIn("/api/chat/generate", javascript)
         self.assertIn("/api/training", javascript)
         self.assertIn("/api/evaluation", javascript)
+        self.assertIn('class="mobile-nav"', html)
+        self.assertIn("position: fixed", css)
+        self.assertIn("env(safe-area-inset-bottom)", css)
         self.assertNotIn("fonts.googleapis.com", css)
         self.assertNotIn("cdn.jsdelivr.net", html + javascript + css)
 
