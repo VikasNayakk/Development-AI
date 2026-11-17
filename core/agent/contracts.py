@@ -50,7 +50,28 @@ _SCHEMA_KEYS = {
 }
 
 
+def _assert_json_value(value: Any, path: str) -> None:
+    if value is None or type(value) in {str, bool, int}:
+        return
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"{path} must not contain non-finite numbers.")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _assert_json_value(item, f"{path}[{index}]")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{path} object keys must be strings.")
+            _assert_json_value(item, f"{path}.{key}")
+        return
+    raise ValueError(f"{path} must contain JSON-compatible values.")
+
+
 def _json_copy(value: Any, *, label: str) -> Any:
+    _assert_json_value(value, label)
     try:
         encoded = json.dumps(
             value, ensure_ascii=False, allow_nan=False, separators=(",", ":")
@@ -139,7 +160,10 @@ def validate_json_value(value: Any, schema: Mapping[str, Any], path: str = "$") 
     }[schema_type]
     if not valid:
         raise ValueError(f"{path}: expected {schema_type}.")
-    if "enum" in schema and value not in schema["enum"]:
+    if "enum" in schema and not any(
+        type(value) is type(candidate) and value == candidate
+        for candidate in schema["enum"]
+    ):
         raise ValueError(f"{path}: value is not in the allowed enum.")
     if schema_type == "object":
         properties = schema["properties"]
@@ -173,8 +197,11 @@ def validate_json_value(value: Any, schema: Mapping[str, Any], path: str = "$") 
 
 
 def arguments_digest(arguments: Mapping[str, Any]) -> str:
+    copied = _json_copy(dict(arguments), label="arguments")
+    if not isinstance(copied, dict):
+        raise ValueError("arguments must be a JSON object.")
     canonical = json.dumps(
-        arguments, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+        copied, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
@@ -244,6 +271,11 @@ class ToolManifest:
         ):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{label} is required.")
+        if not re.fullmatch(
+            r"(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
+            self.version,
+        ):
+            raise ValueError("version must use semantic versioning (major.minor.patch).")
         if type(self.manifest_version) is not int or self.manifest_version != 1:
             raise ValueError("Only manifest_version=1 is currently supported.")
         operations = tuple(self.operations)
@@ -338,6 +370,10 @@ class ToolResult:
         if any(not isinstance(item, str) or not item.strip()
                for item in self.changed_resources):
             raise ValueError("Changed resource references must be non-empty strings.")
+        if self.error_code is not None and (
+            not isinstance(self.error_code, str) or not self.error_code.strip()
+        ):
+            raise ValueError("error_code must be a non-empty string or None.")
         if type(self.retryable) is not bool or type(self.side_effects_may_have_occurred) is not bool:
             raise ValueError("Result flags must be booleans.")
         object.__setattr__(self, "output", copied)
