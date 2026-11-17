@@ -89,6 +89,13 @@ class StepSnapshot:
     # Opaque lookup reference only; the dispatcher must still validate the grant.
     approval_id: str | None = None
 
+    def __post_init__(self) -> None:
+        if self.approval_id is not None and (
+            not isinstance(self.approval_id, str)
+            or not _ID_PATTERN.fullmatch(self.approval_id)
+        ):
+            raise ValueError("approval_id must be a stable identifier (1-128 characters).")
+
 
 @dataclass(frozen=True)
 class TaskEvent:
