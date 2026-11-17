@@ -222,7 +222,7 @@ with SQLiteApprovalStore("data/automation/approvals.sqlite3") as approvals:
     # ToolDispatcher consumes the matching grant immediately before dispatch.
 ```
 
-The store is opt-in and is not currently wired into `core.server` or a browser extension. A process crash after a grant is consumed but before an adapter effect is known still requires adapter idempotency/reconciliation. Durable permission policy, identity/session binding and a broader audit service remain separate integration work.
+The store is opt-in and is not currently wired into `core.server` or a browser extension. Principal/session binding is now persisted and enforced by `AutomationRuntime`, but the authenticated extension identity provider and transport are not implemented. A process crash after a grant is consumed but before an adapter effect is known still requires adapter idempotency/reconciliation; a broader application audit service remains separate integration work.
 
 ## AutomationRuntime (initial library integration)
 
