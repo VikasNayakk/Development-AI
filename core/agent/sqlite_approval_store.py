@@ -18,6 +18,7 @@ from .contracts import ApprovalGrant
 
 _SCHEMA_VERSION = 1
 _MAX_PATH_LENGTH = 4096
+_MAX_APPROVAL_TTL_SECONDS = 15 * 60
 
 
 class ApprovalStoreError(RuntimeError):
@@ -106,7 +107,7 @@ class SQLiteApprovalStore:
                 "SELECT schema_version FROM approval_store_metadata WHERE singleton = 1"
             ).fetchone()
             version = 0 if metadata is None else metadata["schema_version"]
-            if type(version) is not int or version > _SCHEMA_VERSION:
+            if type(version) is not int or version < 0 or version > _SCHEMA_VERSION:
                 raise ApprovalStoreError(
                     f"Approval schema version {version} is newer than supported "
                     f"version {_SCHEMA_VERSION}."
@@ -268,6 +269,10 @@ class SQLiteApprovalStore:
             now = self._now()
             if grant.expires_at_unix <= now:
                 raise ValueError("An expired approval grant cannot be issued.")
+            if grant.expires_at_unix - now > _MAX_APPROVAL_TTL_SECONDS:
+                raise ValueError(
+                    f"Approval grant lifetime cannot exceed {_MAX_APPROVAL_TTL_SECONDS} seconds."
+                )
             self._connection.execute("BEGIN IMMEDIATE")
             try:
                 self._connection.execute(
