@@ -4,6 +4,8 @@ An independent, local-first AI research project. Its primary product goal is a p
 
 The AI is intended to understand goals, discover tool capabilities, plan work, support decisions, dispatch permission-checked operations, verify results and explain outcomes. The browser extension is one adapter; other automation systems must connect through a shared, versioned tool contract. The extension/automation platform is a planned capability and is not yet implemented. See [docs/EXTENSION_AUTOMATION_ARCHITECTURE.md](docs/EXTENSION_AUTOMATION_ARCHITECTURE.md).
 
+The user-specific AI engineering backlog for BCE, Teams task intake, approval, workflow authoring, GitHub workflow intake and application coordination is tracked in [docs/EXTENSION_AGENT_BACKLOG.md](docs/EXTENSION_AGENT_BACKLOG.md).
+
 ## Independence
 - No required hosted AI API, pretrained model, or external model runtime.
 - Model weights are initialized randomly and learned by this repository's training code.
