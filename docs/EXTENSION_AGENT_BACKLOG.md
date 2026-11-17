@@ -42,13 +42,15 @@ The following are foundations, not proof that the full product is complete:
 
 ### AI-1 — Identity, trust and authorization scope
 
+**Implementation status:** backend identity binding and durable session expiry/revocation are implemented on feature branch `feature/principal-session-binding`; authenticated extension identity sourcing and approval confirmation UX remain pending CI/review.
+
 - [ ] Define a stable owner/principal identity source and its trust boundary.
 - [ ] Define extension installation identity and per-browser session identity; do not treat a tab ID or conversation ID as a user identity.
-- [ ] Bind task records, approval grants, workflow activations and audit events to principal + extension session.
-- [ ] Extend approval scope to bind principal/session, target resource, exact arguments digest, tool/version/operation, task/step, request and idempotency key.
-- [ ] Add session expiry, revocation and sign-out handling; revoked sessions must invalidate pending approvals.
+- [x] Bind task records and approval grants to principal + extension session. Workflow activations and audit events are not implemented yet.
+- [x] Extend approval scope to bind principal/session, exact arguments digest, tool/version/operation, task/step, request and idempotency key. Target-resource display/UX remains pending.
+- [x] Add durable session expiry and revocation; revoked sessions invalidate pending approvals. Host sign-out wiring remains pending.
 - [ ] Make approval confirmation display the exact operation, target, side effects and limits. No blanket approval for unrelated future work.
-- [ ] Add tests for cross-user approval replay, cross-session replay, stale session, expired/revoked scope and changed arguments.
+- [x] Add tests for cross-user/session mismatch, session expiry/revocation, approval replay and changed arguments. Authenticated bridge replay tests remain part of AI-2.
 - **Acceptance:** a grant created by one user/session cannot authorize another user's task or another extension session, including after restart. Invalid identity or scope fails closed.
 
 ### AI-2 — Authenticated local bridge to BCE
