@@ -135,7 +135,7 @@ def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> N
             if key in schema and (
                 isinstance(schema[key], bool)
                 or not isinstance(schema[key], (int, float))
-                or not math.isfinite(schema[key])
+                or (type(schema[key]) is float and not math.isfinite(schema[key]))
             ):
                 raise ValueError(f"{path}: {key} must be a finite number.")
         if schema.get("minimum", -math.inf) > schema.get("maximum", math.inf):
@@ -153,7 +153,7 @@ def validate_json_value(value: Any, schema: Mapping[str, Any], path: str = "$") 
         "number": (
             not isinstance(value, bool)
             and isinstance(value, (int, float))
-            and math.isfinite(value)
+            and (type(value) is int or math.isfinite(value))
         ),
         "boolean": type(value) is bool,
         "null": value is None,
@@ -227,6 +227,8 @@ class ToolOperation:
             raise ValueError("Operation description is required.")
         _validate_schema_definition(self.input_schema, "$input")
         _validate_schema_definition(self.output_schema, "$output")
+        if not isinstance(self.required_permissions, (set, frozenset, tuple, list)):
+            raise ValueError("required_permissions must be a collection of strings.")
         if any(not isinstance(item, str) or not item.strip()
                for item in self.required_permissions):
             raise ValueError("Required permissions must be non-empty strings.")
@@ -243,8 +245,9 @@ class ToolOperation:
         if (
             isinstance(self.timeout_seconds, bool)
             or not isinstance(self.timeout_seconds, (int, float))
-            or not math.isfinite(self.timeout_seconds)
+            or (type(self.timeout_seconds) is float and not math.isfinite(self.timeout_seconds))
             or self.timeout_seconds <= 0
+            or self.timeout_seconds > 300
         ):
             raise ValueError("timeout_seconds must be a finite positive number.")
         object.__setattr__(self, "required_permissions", frozenset(self.required_permissions))
@@ -338,7 +341,7 @@ class ApprovalGrant:
         if (
             isinstance(self.expires_at_unix, bool)
             or not isinstance(self.expires_at_unix, (int, float))
-            or not math.isfinite(self.expires_at_unix)
+            or (type(self.expires_at_unix) is float and not math.isfinite(self.expires_at_unix))
         ):
             raise ValueError("Approval expiry must be a finite Unix timestamp.")
         if type(self.user_confirmed) is not bool:
@@ -533,4 +536,13 @@ class ToolDispatcher:
                     status=ResultStatus.FAILED, error_code="invalid_adapter_output",
                     side_effects_may_have_occurred=True,
                 )
+        if not operation.idempotent and result.retryable:
+            return ToolResult(
+                status=result.status,
+                output=result.output,
+                changed_resources=result.changed_resources,
+                error_code=result.error_code,
+                retryable=False,
+                side_effects_may_have_occurred=result.side_effects_may_have_occurred,
+            )
         return result
