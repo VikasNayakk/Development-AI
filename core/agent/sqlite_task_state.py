@@ -207,6 +207,8 @@ class SQLiteTaskStateStore:
             "task_id": task.task_id,
             "request_id": task.request_id,
             "goal": task.goal,
+            "principal_id": task.principal_id,
+            "session_id": task.session_id,
             "status": task.status.value,
             "revision": task.revision,
             "created_at_unix": task.created_at_unix,
@@ -314,6 +316,8 @@ class SQLiteTaskStateStore:
                 request_id=payload["request_id"],
                 goal=payload["goal"],
                 status=TaskStatus(payload["status"]),
+                principal_id=payload.get("principal_id"),
+                session_id=payload.get("session_id"),
                 revision=payload["revision"],
                 created_at_unix=payload["created_at_unix"],
                 updated_at_unix=payload["updated_at_unix"],
@@ -440,6 +444,8 @@ class SQLiteTaskStateStore:
         request_id: str,
         goal: str,
         steps: Iterable[PlanStep],
+        principal_id: str | None = None,
+        session_id: str | None = None,
     ) -> TaskSnapshot:
         with self._lock:
             self._ensure_open()
@@ -447,7 +453,8 @@ class SQLiteTaskStateStore:
             try:
                 memory_store = TaskStateStore(clock=self._clock)
                 task = memory_store.create_task(
-                    task_id=task_id, request_id=request_id, goal=goal, steps=steps
+                    task_id=task_id, request_id=request_id, goal=goal, steps=steps,
+                    principal_id=principal_id, session_id=session_id,
                 )
                 self._insert_task(task)
                 self._connection.commit()
