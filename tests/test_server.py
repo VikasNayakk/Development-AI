@@ -190,6 +190,21 @@ class LocalJobManagerTests(unittest.TestCase):
 
 
 class LocalHttpServerTests(unittest.TestCase):
+    def test_ui_assets_are_local_and_all_primary_screens_are_present(self):
+        from core.server import UI_ROOT
+
+        html = (UI_ROOT / "index.html").read_text(encoding="utf-8")
+        css = (UI_ROOT / "app.css").read_text(encoding="utf-8")
+        javascript = (UI_ROOT / "app.js").read_text(encoding="utf-8")
+        for screen in ('id="view-overview"', 'id="view-playground"',
+                       'id="view-training"', 'id="view-evaluation"'):
+            self.assertIn(screen, html)
+        self.assertIn("/api/chat/generate", javascript)
+        self.assertIn("/api/training", javascript)
+        self.assertIn("/api/evaluation", javascript)
+        self.assertNotIn("fonts.googleapis.com", css)
+        self.assertNotIn("cdn.jsdelivr.net", html + javascript + css)
+
     def test_server_refuses_non_loopback_binding(self):
         with self.assertRaisesRegex(ValueError, "loopback-only"):
             create_server("0.0.0.0", 0)
