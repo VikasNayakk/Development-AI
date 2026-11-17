@@ -151,6 +151,6 @@ The repository now contains an initial in-process foundation in `core.agent.cont
 - Single-use approval IDs, bounded adapter deadlines, cancellation context and normalized results.
 - Retryability is suppressed for operations declared non-idempotent.
 
-This is only the contract/dispatch foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, persistent approval store, durable task state, audit-log service, multi-tool planner or end-to-end browser control. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
+This is an initial contract/dispatch and process-local task-state foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, persistent approval store, durable task state, durable audit-log service, multi-tool planner or end-to-end browser control. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
 
 This document defines the intended architecture and acceptance criteria; it is not evidence that the extension or external automation tools are already connected.
