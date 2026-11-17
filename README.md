@@ -16,7 +16,8 @@ The AI is intended to understand goals, discover tool capabilities, plan work, s
 - Disjoint train/validation evaluation and best-validation checkpointing.
 - Local dataset preparation with explicit rights manifest, provenance hashes, conservative privacy filtering, normalization and exact deduplication.
 - Initial model-independent automation-agent foundation: versioned tool manifests, strict argument/output schemas, explicit registry, permission checks and scoped single-use approvals.
-- Process-local task state engine: validated dependency graphs, guarded step transitions, cancellation requests, revision checks and ordered events. State is not yet durable. No real extension or external automation adapters are connected yet.
+- Process-local task state engine: validated dependency graphs, guarded step transitions, cancellation requests, revision checks and ordered events.
+- Initial SQLite task ledger: transactional task snapshots and append-only events, restart recovery, schema checks and cross-instance stale-write protection. Not yet wired into the running server/dispatcher; approval grants and external execution recovery remain separate work.
 
 This is a small research model, not a capable general-purpose assistant. Initial output will be poor. Capability requires substantial high-quality data, compute and evaluation.
 
