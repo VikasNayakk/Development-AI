@@ -54,6 +54,8 @@ class PlanStep:
     depends_on: tuple[str, ...] = ()
     tool_id: str | None = None
     operation: str | None = None
+    tool_version: str | None = None
+    manifest_version: int = 1
 
     def __post_init__(self) -> None:
         if not isinstance(self.step_id, str) or not _ID_PATTERN.fullmatch(self.step_id):
@@ -75,6 +77,18 @@ class PlanStep:
                 raise ValueError(f"{label} must be a non-empty string of at most 128 characters.")
         if (self.tool_id is None) != (self.operation is None):
             raise ValueError("tool_id and operation must either both be set or both be omitted.")
+        if self.tool_version is not None and (
+            not isinstance(self.tool_version, str)
+            or not re.fullmatch(
+                r"(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?",
+                self.tool_version,
+            )
+        ):
+            raise ValueError("tool_version must use semantic versioning.")
+        if self.tool_id is None and self.tool_version is not None:
+            raise ValueError("tool_version requires a tool_id and operation binding.")
+        if type(self.manifest_version) is not int or self.manifest_version != 1:
+            raise ValueError("Only manifest_version=1 is currently supported.")
         object.__setattr__(self, "depends_on", dependencies)
 
 
