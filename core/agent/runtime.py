@@ -516,7 +516,7 @@ class AutomationRuntime:
         try:
             try:
                 self._assert_active_identity(identity)
-            result = self._dispatcher.dispatch(
+                result = self._dispatcher.dispatch(
                     call,
                     granted_permissions=granted_permissions,
                     approval=approval,
