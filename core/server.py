@@ -28,7 +28,7 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_PROMPT_CHARS = 12_000
 MAX_GENERATION_TOKENS = 256
 MAX_LOG_LINES = 400
-MAX_CAPTURED_OUTPUT = 2 * 1024 * 1024
+MAX_CAPTURED_OUTPUT = 8 * 1024 * 1024
 _GENERATION_LOCK = threading.Lock()
 
 
@@ -129,6 +129,7 @@ def build_training_command(root: Path, payload: dict) -> list[str]:
         "--block-size", str(block_size),
         "--eval-interval", str(eval_interval),
         "--eval-iters", str(eval_iters),
+        "--resume-interval", str(resume_interval),
         "--validation-fraction", str(validation_fraction),
         "--resume-interval", str(resume_interval),
         "--device", device,
