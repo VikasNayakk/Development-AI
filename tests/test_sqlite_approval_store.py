@@ -20,8 +20,8 @@ from core.agent import (
     SQLiteApprovalStore,
     ApprovalStoreError,
     ApprovalStoreIntegrityError,
-    arguments_digest,
 )
+from core.agent.contracts import arguments_digest
 
 
 INPUT_SCHEMA = {
