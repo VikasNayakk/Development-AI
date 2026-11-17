@@ -55,11 +55,13 @@ The following are foundations, not proof that the full product is complete:
 
 ### AI-2 — Authenticated local bridge to BCE
 
+**Implementation status:** loopback HTTP is the selected transport direction. Pairing-code, extension-origin/bearer authentication and durable request replay-protection primitives are implemented on feature branch `feature/bridge-session-credentials`; server routes, CORS/Host integration and BCE pairing UI remain pending.
+
 - [ ] Select and document a Chrome-supported transport (for example, extension-native messaging to a loopback host) and a threat model before exposing an endpoint.
 - [ ] Keep all local service bindings on loopback; reject non-loopback hosts and unexpected Host / Origin values.
 - [ ] Add a pairing handshake with a high-entropy, revocable session credential; never place long-lived secrets in page content, model prompts or URLs.
 - [ ] Authenticate every request and bind it to the paired extension identity and active principal.
-- [ ] Add request IDs, nonces / replay protection, strict timestamps, bounded payload sizes, request deadlines and rate limits.
+- [x] Add request IDs, durable replay protection and strict timestamps in the bridge-auth library primitives. Bounded HTTP payloads already exist in Studio; route-specific request deadlines and rate limits remain pending.
 - [ ] Define versioned request / response schemas for status, capabilities, task proposal, approval request, dispatch, cancellation and result reporting.
 - [ ] Reject unknown message types, extra fields where prohibited, malformed JSON, oversized arrays and unsupported schema versions.
 - [ ] Add disconnect, extension reload, server restart, permission removal and cancellation behavior.
