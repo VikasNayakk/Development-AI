@@ -6,8 +6,11 @@ before host code constructs RuntimeIdentity and registers it here.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import math
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -16,7 +19,7 @@ from typing import Callable
 
 from .contracts import RuntimeIdentity
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _MAX_DATABASE_PATH_LENGTH = 4096
 _MAX_SESSION_TTL_SECONDS = 24 * 60 * 60
 
@@ -112,9 +115,12 @@ class SQLiteSessionStore:
                     CREATE TABLE agent_sessions (
                         session_id TEXT PRIMARY KEY,
                         principal_id TEXT NOT NULL,
+                        client_id TEXT,
+                        credential_sha256 TEXT,
                         issued_at_unix REAL NOT NULL,
                         expires_at_unix REAL NOT NULL,
                         revoked_at_unix REAL,
+                        CHECK ((client_id IS NULL AND credential_sha256 IS NULL) OR (client_id IS NOT NULL AND credential_sha256 IS NOT NULL)),
                         CHECK (expires_at_unix > issued_at_unix),
                         CHECK (revoked_at_unix IS NULL OR revoked_at_unix >= issued_at_unix)
                     )
@@ -123,7 +129,7 @@ class SQLiteSessionStore:
                 connection.execute(
                     """
                     CREATE TRIGGER agent_sessions_scope_immutable
-                    BEFORE UPDATE OF session_id, principal_id, issued_at_unix, expires_at_unix
+                    BEFORE UPDATE OF session_id, principal_id, client_id, credential_sha256, issued_at_unix, expires_at_unix
                     ON agent_sessions
                     BEGIN
                         SELECT RAISE(ABORT, 'session identity and lifetime are immutable');
@@ -155,6 +161,25 @@ class SQLiteSessionStore:
                     (_SCHEMA_VERSION,),
                 )
             else:
+                if version == 1:
+                    connection.execute("ALTER TABLE agent_sessions ADD COLUMN client_id TEXT")
+                    connection.execute("ALTER TABLE agent_sessions ADD COLUMN credential_sha256 TEXT")
+                    connection.execute(
+                        "UPDATE agent_session_store_metadata SET schema_version = ? WHERE singleton = 1",
+                        (_SCHEMA_VERSION,),
+                    )
+                    connection.execute("DROP TRIGGER agent_sessions_scope_immutable")
+                    connection.execute(
+                        """
+                        CREATE TRIGGER agent_sessions_scope_immutable
+                        BEFORE UPDATE OF session_id, principal_id, client_id, credential_sha256,
+                            issued_at_unix, expires_at_unix
+                        ON agent_sessions
+                        BEGIN
+                            SELECT RAISE(ABORT, 'session identity and lifetime are immutable');
+                        END
+                        """
+                    )
                 columns = {
                     row["name"]
                     for row in connection.execute("PRAGMA table_info(agent_sessions)").fetchall()
@@ -171,8 +196,8 @@ class SQLiteSessionStore:
                 if metadata_exists is None:
                     raise SessionStoreIntegrityError("Session schema metadata is missing.")
                 required_columns = {
-                    "session_id", "principal_id", "issued_at_unix",
-                    "expires_at_unix", "revoked_at_unix",
+                    "session_id", "principal_id", "client_id", "credential_sha256",
+                    "issued_at_unix", "expires_at_unix", "revoked_at_unix",
                 }
                 required_triggers = {
                     "agent_sessions_scope_immutable",
