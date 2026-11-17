@@ -141,4 +141,16 @@ Unit tests of the model alone do not satisfy these integration gates. A simulate
 7. Add adversarial, permission-boundary, failure-recovery and end-to-end integration tests.
 8. Only then expand model instruction tuning, planning and decision quality against the real tool-use evaluation suite.
 
-The current repository does not yet implement this agent/adapter platform. This document defines its intended architecture and acceptance criteria; it is not evidence that the extension or external automation tools are already connected.
+## Current implementation boundary
+
+The repository now contains an initial in-process foundation in `core.agent.contracts`:
+- Versioned tool manifest and operation descriptions.
+- Strict JSON-compatible argument and output schema validation with a bounded payload size.
+- Explicit registry; model output cannot register tools.
+- Permission checks and exact-payload approval grants for high-impact operations.
+- Single-use approval IDs, bounded adapter deadlines, cancellation context and normalized results.
+- Retryability is suppressed for operations declared non-idempotent.
+
+This is only the contract/dispatch foundation. No browser extension or external automation adapter is connected yet. There is no authenticated extension transport, persistent approval store, durable task state, audit-log service, multi-tool planner or end-to-end browser control. The synchronous dispatcher cannot forcibly interrupt an adapter that ignores its deadline; adapters must enforce cancellation/deadlines themselves. The acceptance gates above remain mandatory before claiming integration is complete.
+
+This document defines the intended architecture and acceptance criteria; it is not evidence that the extension or external automation tools are already connected.
