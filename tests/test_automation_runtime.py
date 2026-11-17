@@ -454,7 +454,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.assertEqual(result.tool_result.status, ResultStatus.DENIED)
         self.assertEqual(result.tool_result.error_code, "session_unavailable")
         self.assertFalse(result.tool_result.side_effects_may_have_occurred)
-        self.assertEqual(result.task.get_step("step-1").status, StepStatus.DENIED)
+        self.assertEqual(result.task.get_step("step-1").status, StepStatus.FAILED)
         self.assertFalse(result.task.get_step("step-1").side_effects_may_have_occurred)
         self.assertEqual(len(adapter.calls), 0)
 
