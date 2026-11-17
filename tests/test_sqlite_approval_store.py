@@ -123,6 +123,25 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot exceed"):
             store.issue(make_grant(expires=1001.0))
 
+    def test_clock_is_sampled_inside_each_approval_transaction(self):
+        store = self.open_store()
+        connection = store._connection
+
+        def transaction_clock():
+            if not connection.in_transaction:
+                raise AssertionError("Approval timestamp was read outside its SQLite transaction.")
+            return 100.0
+
+        store._clock = transaction_clock
+        first = make_grant(approval_id="approval-first")
+        store.issue(first)
+        self.assertEqual(store.get(first.approval_id), first)
+        self.assertTrue(store.consume(first))
+
+        second = make_grant(approval_id="approval-second")
+        store.issue(second)
+        self.assertTrue(store.revoke(second.approval_id))
+
     def test_grant_survives_restart_and_dispatcher_consumes_it_once(self):
         original_store = self.open_store()
         call = make_call()
