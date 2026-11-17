@@ -6,6 +6,7 @@ from pathlib import Path
 
 from core.agent import (
     AutomationRuntime,
+    RuntimeIdentity,
     PlanStep,
     ResultStatus,
     RiskLevel,
@@ -26,6 +27,8 @@ INPUT_SCHEMA = {
     "required": ["url"],
     "additionalProperties": False,
 }
+IDENTITY = RuntimeIdentity(principal_id="owner-1", session_id="session-1")
+
 OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {"title": {"type": "string"}},
@@ -101,6 +104,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.database = Path(self.temp_dir.name) / "runtime.sqlite3"
         self.clock_value = [100.0]
         self.runtime = self.open_runtime()
+        self.runtime.register_session(IDENTITY, expires_at_unix=1000.0)
         self.addCleanup(self.close_runtime)
 
     def open_runtime(self):
@@ -124,6 +128,7 @@ class AutomationRuntimeTests(unittest.TestCase):
             task_id="task-1",
             request_id="request-1",
             goal="Complete the requested browser automation safely.",
+            identity=IDENTITY,
             steps=steps or (
                 PlanStep(
                     "step-1", "Read the selected page.",
@@ -136,7 +141,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         adapter = self.register()
         created = self.create_task()
         result = self.runtime.execute_step(
-            make_call(), granted_permissions={"browser.read"}
+            make_call(), granted_permissions={"browser.read"}, identity=IDENTITY
         )
 
         self.assertEqual(result.tool_result.status, ResultStatus.SUCCESS)
@@ -157,7 +162,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         ))
         call = make_call()
 
-        result = self.runtime.execute_step(call, granted_permissions={"browser.write"})
+        result = self.runtime.execute_step(call, granted_permissions={"browser.write"}, identity=IDENTITY)
         self.assertTrue(result.awaiting_approval)
         self.assertIsNone(result.tool_result)
         self.assertTrue(result.approval_id)
@@ -181,7 +186,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         waiting = self.runtime.execute_step(call, granted_permissions={"browser.write"})
         self.assertTrue(waiting.awaiting_approval)
         self.assertTrue(waiting.approval_id)
-        grant = self.runtime.issue_approval(call, user_confirmed=True)
+        grant = self.runtime.issue_approval(call, user_confirmed=True, identity=IDENTITY)
         approval_id = grant.approval_id
         self.assertEqual(approval_id, waiting.approval_id)
 
@@ -190,7 +195,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         second_adapter = FakeAdapter(operation)
         self.runtime.register_adapter(second_adapter)
 
-        restored = self.runtime.get_task("task-1")
+        restored = self.runtime.get_task("task-1", identity=IDENTITY)
         self.assertEqual(restored.get_step("step-1").approval_id, approval_id)
         result = self.runtime.execute_step(
             call,
@@ -301,7 +306,7 @@ class AutomationRuntimeTests(unittest.TestCase):
     def test_missing_permissions_do_not_start_or_consume_step(self):
         adapter = self.register()
         self.create_task()
-        result = self.runtime.execute_step(make_call(), granted_permissions=set())
+        result = self.runtime.execute_step(make_call(), granted_permissions=set(), identity=IDENTITY)
         self.assertEqual(result.tool_result.error_code, "missing_permission")
         self.assertEqual(result.task.get_step("step-1").status, StepStatus.PENDING)
         self.assertEqual(len(adapter.calls), 0)
@@ -359,7 +364,7 @@ class AutomationRuntimeTests(unittest.TestCase):
         worker = threading.Thread(target=run_step)
         worker.start()
         self.assertTrue(started.wait(timeout=2))
-        self.runtime.cancel_task("task-1")
+        self.runtime.cancel_task("task-1", identity=IDENTITY)
         worker.join(timeout=5)
 
         self.assertFalse(worker.is_alive())
@@ -388,6 +393,40 @@ class AutomationRuntimeTests(unittest.TestCase):
         self.assertEqual(step.status, StepStatus.FAILED)
         self.assertEqual(step.error_code, "runtime_restarted")
         self.assertTrue(step.side_effects_may_have_occurred)
+
+    def test_task_is_bound_to_exact_principal_and_extension_session(self):
+        self.register()
+        self.create_task()
+        other_session = RuntimeIdentity("owner-1", "session-2")
+        self.runtime.register_session(other_session, expires_at_unix=1000.0)
+        with self.assertRaises(PermissionError):
+            self.runtime.get_task("task-1", identity=other_session)
+        with self.assertRaises(PermissionError):
+            self.runtime.execute_step(
+                make_call(),
+                granted_permissions={"browser.read"},
+                identity=other_session,
+            )
+
+    def test_revoked_session_cannot_read_or_execute_existing_task(self):
+        adapter = self.register()
+        self.create_task()
+        self.assertTrue(self.runtime.revoke_session(IDENTITY))
+        self.assertFalse(self.runtime.revoke_session(IDENTITY))
+        with self.assertRaises(PermissionError):
+            self.runtime.get_task("task-1", identity=IDENTITY)
+        with self.assertRaises(PermissionError):
+            self.runtime.execute_step(
+                make_call(),
+                granted_permissions={"browser.read"},
+                identity=IDENTITY,
+            )
+        self.assertEqual(len(adapter.calls), 0)
+
+    def test_expired_session_cannot_create_or_execute_tasks(self):
+        self.clock_value[0] = 1001.0
+        with self.assertRaises(PermissionError):
+            self.create_task()
 
     def test_close_refuses_to_close_while_adapter_is_running(self):
         started = threading.Event()
