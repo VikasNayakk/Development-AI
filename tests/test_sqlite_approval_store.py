@@ -182,11 +182,12 @@ class SQLiteApprovalStoreTests(unittest.TestCase):
         self.assertEqual(len(adapter.calls), 1)
 
     def test_expired_grant_is_not_consumed(self):
-        store = self.open_store()
+        issuer = self.open_store(clock=lambda: 100.0)
         grant = make_grant(expires=150.0)
-        store.issue(grant)
-        self.assertFalse(store.consume(grant))
-        row = store._connection.execute(
+        issuer.issue(grant)
+        expired_store = self.open_store(clock=lambda: 200.0)
+        self.assertFalse(expired_store.consume(grant))
+        row = expired_store._connection.execute(
             "SELECT consumed_at_unix FROM approval_grants WHERE approval_id = ?",
             (grant.approval_id,),
         ).fetchone()
