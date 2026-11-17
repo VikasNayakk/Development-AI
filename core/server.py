@@ -488,7 +488,16 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
         def _check_local_request(self) -> bool:
             host_header = self.headers.get("Host", "")
             parsed_host = urlsplit("//" + host_header)
-            if parsed_host.hostname not in {"127.0.0.1", "localhost"}:
+            try:
+                host_port = parsed_host.port
+            except ValueError:
+                host_port = -1
+            host_port = host_port or 80
+            server_port = self.server.server_address[1]
+            if (
+                parsed_host.hostname not in {"127.0.0.1", "localhost"}
+                or host_port != server_port
+            ):
                 self._send_json(403, {"error": "Local requests only."})
                 return False
             origin = self.headers.get("Origin")
@@ -498,10 +507,11 @@ def create_server(host: str = "127.0.0.1", port: int = 8765, root: Path = PROJEC
                     origin_port = parsed_origin.port
                 except ValueError:
                     origin_port = -1
+                origin_port = origin_port or 80
                 if (
                     parsed_origin.scheme != "http"
                     or parsed_origin.hostname not in {"127.0.0.1", "localhost"}
-                    or origin_port not in {None, self.server.server_address[1]}
+                    or origin_port != server_port
                 ):
                     self._send_json(403, {"error": "Cross-origin requests are not allowed."})
                     return False
