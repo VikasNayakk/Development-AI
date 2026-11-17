@@ -153,6 +153,34 @@ class SQLiteTaskStateStoreTests(unittest.TestCase):
             second.get_task("task-2").get_step("inspect").status, StepStatus.RUNNING
         )
 
+    def test_get_task_uses_consistent_row_and_event_snapshot(self):
+        first = self.open_store()
+        created = self.create_task(first)
+        second = self.open_store()
+        mutation_performed = False
+
+        def update_between_reads(statement):
+            nonlocal mutation_performed
+            if (
+                "SELECT sequence, event_json FROM task_events" in statement
+                and not mutation_performed
+            ):
+                mutation_performed = True
+                second.start_step("task-1", "inspect")
+
+        first._connection.set_trace_callback(update_between_reads)
+        try:
+            snapshot = first.get_task("task-1")
+        finally:
+            first._connection.set_trace_callback(None)
+
+        self.assertTrue(mutation_performed)
+        self.assertEqual(snapshot.revision, created.revision)
+        self.assertEqual(snapshot.get_step("inspect").status, StepStatus.PENDING)
+        latest = second.get_task("task-1")
+        self.assertEqual(latest.revision, 3)
+        self.assertEqual(latest.get_step("inspect").status, StepStatus.RUNNING)
+
     def test_duplicate_task_id_is_rejected_without_overwrite(self):
         store = self.open_store()
         original = self.create_task(store)
