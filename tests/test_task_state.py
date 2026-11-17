@@ -106,11 +106,11 @@ class TaskLifecycleTests(unittest.TestCase):
 
     def test_approval_reference_is_retained_but_is_not_execution_permission(self):
         snapshot = self.store.require_approval(
-            "task-1", "inspect", approval_id="approval-opaque-123"
+            "task-1", "inspect", approval_id="_approval-opaque-123"
         )
         self.assertEqual(snapshot.status, TaskStatus.WAITING_APPROVAL)
         self.assertEqual(
-            snapshot.get_step("inspect").approval_id, "approval-opaque-123"
+            snapshot.get_step("inspect").approval_id, "_approval-opaque-123"
         )
         snapshot = self.store.approve_step("task-1", "inspect")
         self.assertEqual(snapshot.get_step("inspect").status, StepStatus.PENDING)
