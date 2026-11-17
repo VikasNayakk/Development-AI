@@ -431,6 +431,33 @@ class AutomationRuntimeTests(unittest.TestCase):
             )
         self.assertEqual(len(adapter.calls), 0)
 
+    def test_session_revoked_before_dispatch_blocks_adapter_without_uncertain_effect(self):
+        adapter = self.register()
+        self.create_task()
+        original_check = self.runtime._assert_active_identity
+        checks = 0
+
+        def revoke_on_dispatch_check(identity):
+            nonlocal checks
+            checks += 1
+            if checks == 2:
+                self.runtime.revoke_session(identity)
+            original_check(identity)
+
+        self.runtime._assert_active_identity = revoke_on_dispatch_check
+        result = self.runtime.execute_step(
+            make_call(),
+            granted_permissions={"browser.read"},
+            identity=IDENTITY,
+        )
+        self.assertEqual(checks, 2)
+        self.assertEqual(result.tool_result.status, ResultStatus.DENIED)
+        self.assertEqual(result.tool_result.error_code, "session_unavailable")
+        self.assertFalse(result.tool_result.side_effects_may_have_occurred)
+        self.assertEqual(result.task.get_step("step-1").status, StepStatus.DENIED)
+        self.assertFalse(result.task.get_step("step-1").side_effects_may_have_occurred)
+        self.assertEqual(len(adapter.calls), 0)
+
     def test_expired_session_cannot_create_or_execute_tasks(self):
         self.clock_value[0] = 1001.0
         with self.assertRaises(PermissionError):
