@@ -74,6 +74,8 @@ class LocalPathValidationTests(unittest.TestCase):
             "eval_interval": 5,
             "eval_iters": 2,
             "validation_fraction": 0.2,
+            "early_stopping_patience": 4,
+            "early_stopping_min_delta": 0.02,
             "device": "cpu",
             "seed": 7,
         })
@@ -82,6 +84,8 @@ class LocalPathValidationTests(unittest.TestCase):
         self.assertEqual(command[command.index("--steps") + 1], "25")
         self.assertEqual(command[command.index("--batch-size") + 1], "2")
         self.assertEqual(command[command.index("--resume-interval") + 1], "100")
+        self.assertEqual(command[command.index("--early-stopping-patience") + 1], "4")
+        self.assertEqual(command[command.index("--early-stopping-min-delta") + 1], "0.02")
         self.assertFalse(any("shell" in item for item in command))
 
     def test_training_command_rejects_invalid_values_and_overwrite(self):
@@ -91,6 +95,9 @@ class LocalPathValidationTests(unittest.TestCase):
             {"device": []},
             {"learning_rate": float("nan")},
             {"validation_fraction": 0.5},
+            {"early_stopping_patience": -1},
+            {"early_stopping_min_delta": float("nan")},
+            {"early_stopping_min_delta": 0.01},
         ):
             with self.subTest(payload=payload):
                 with self.assertRaises(ValueError):
